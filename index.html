@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>Trip Map</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -33,17 +33,18 @@
     --danger-bg:#F5DEDB; --danger-border:#E0B7B1; --danger-text:#9A3E33;
   }
   *{box-sizing:border-box;}
-  html,body{height:100%;margin:0;}
+  html,body{height:100%;margin:0;overscroll-behavior:none;}
   body{
     background:var(--bg); color:var(--text);
     font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
     display:flex; justify-content:center;
+    height:100vh; height:100dvh; overflow:hidden;
   }
-  #app{ width:100%; max-width:480px; min-height:100vh; display:flex; flex-direction:column; position:relative;
-    border-left:1px solid var(--border); border-right:1px solid var(--border); }
+  #app{ width:100%; max-width:480px; height:100%; display:flex; flex-direction:column; position:relative;
+    border-left:1px solid var(--border); border-right:1px solid var(--border); overflow:hidden; }
 
   /* ---- top bar (shared) ---- */
-  .topbar{ display:flex; align-items:center; justify-content:space-between; padding:14px 18px 0; }
+  .topbar{ display:flex; align-items:center; justify-content:space-between; padding:calc(10px + env(safe-area-inset-top)) 18px 0; flex-shrink:0; }
   .topbar button.icon-btn{
     background:none; border:1px solid var(--border); color:var(--text); border-radius:10px;
     width:34px; height:34px; font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center;
@@ -51,45 +52,45 @@
   .topbar button.icon-btn:hover{ border-color:var(--accent); }
 
   /* ---- home screen ---- */
-  .screen{ display:none; flex-direction:column; flex:1; padding-bottom:24px; }
-  #screen-home{ padding-bottom:32px; }
+  .screen{ display:none; flex-direction:column; flex:1; min-height:0; overflow-y:auto; padding-bottom:16px; }
+  #screen-home{ overflow:hidden; padding-bottom:calc(14px + env(safe-area-inset-bottom)); }
   .screen.active{ display:flex; }
-  .eyebrow{ font-size:12px; color:var(--muted); letter-spacing:.06em; text-transform:uppercase; margin-bottom:6px; }
-  h1.trip-title{ font-family:'Fraunces',serif; font-weight:500; font-size:30px; margin:0 0 4px; letter-spacing:-.01em; }
+  .eyebrow{ font-size:11px; color:var(--muted); letter-spacing:.06em; text-transform:uppercase; margin-bottom:4px; }
+  h1.trip-title{ font-family:'Fraunces',serif; font-weight:500; font-size:clamp(22px,7vh,30px); margin:0 0 2px; letter-spacing:-.01em; line-height:1.1; }
   .trip-sub{ color:var(--muted); font-size:13px; }
-  .home-header{ padding:8px 18px 0; }
+  .home-header{ padding:6px 18px 0; flex-shrink:0; }
 
   .hero{
-    margin:18px 18px 0; border-radius:16px; overflow:hidden; border:1px solid var(--border);
-    position:relative; min-height:96px; background:linear-gradient(160deg,var(--surface2),var(--surface));
-    display:flex; align-items:flex-end; padding:14px; cursor:pointer;
+    margin:12px 18px 0; border-radius:16px; overflow:hidden; border:1px solid var(--border);
+    position:relative; height:clamp(64px,11vh,96px); background:linear-gradient(160deg,var(--surface2),var(--surface));
+    display:flex; align-items:flex-end; padding:12px; cursor:pointer; flex-shrink:0;
   }
-  .hero-pill{ background:var(--overlay); border:1px solid var(--border); border-radius:10px; padding:8px 12px; font-size:13px; }
+  .hero-pill{ background:var(--overlay); border:1px solid var(--border); border-radius:10px; padding:7px 11px; font-size:13px; }
   .hero-pill b{ font-weight:600; }
   .hero-pill .count{ color:var(--muted); font-size:11px; }
   .hero-empty{ color:var(--muted); font-size:13px; }
 
-  .grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:18px 18px 0; }
+  .grid{ display:grid; grid-template-columns:1fr 1fr; grid-template-rows:repeat(3,minmax(0,1fr)); gap:8px; margin:10px 18px 0; flex:1; min-height:0; }
   .card{
     background:var(--surface); border:1px solid var(--border); border-radius:14px;
-    padding:16px; display:flex; flex-direction:column; gap:10px; cursor:pointer;
+    padding:10px 14px; display:flex; flex-direction:column; justify-content:center; gap:6px; cursor:pointer; min-height:0;
   }
   .card:hover{ border-color:var(--accent); }
-  .cat-icon{ width:34px; height:34px; border-radius:9px; display:flex; align-items:center; justify-content:center; font-size:16px; }
-  .card-title{ font-size:14px; font-weight:600; }
-  .card-count{ font-size:12px; color:var(--muted); }
+  .cat-icon{ width:30px; height:30px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:15px; flex-shrink:0; }
+  .card-title{ font-size:14px; font-weight:600; line-height:1.15; }
+  .card-count{ font-size:12px; color:var(--muted); line-height:1.15; }
   .wide{ grid-column:span 2; flex-direction:row; align-items:center; justify-content:space-between; }
   .wide .left{ display:flex; align-items:center; gap:12px; }
   .chev{ color:var(--muted); font-size:18px; }
 
   .primary-btn{
-    margin:22px 18px 0; background:var(--accent); color:var(--accent-ink); border:none;
-    border-radius:12px; padding:13px; font-weight:600; font-size:14px; font-family:inherit; cursor:pointer;
+    margin:12px 18px 0; background:var(--accent); color:var(--accent-ink); border:none;
+    border-radius:12px; padding:13px; font-weight:600; font-size:14px; font-family:inherit; cursor:pointer; flex-shrink:0;
   }
   .primary-btn:hover{ filter:brightness(1.05); }
 
   /* ---- category / list screen ---- */
-  .cat-header{ display:flex; align-items:center; gap:10px; padding:14px 18px 0; }
+  .cat-header{ display:flex; align-items:center; gap:10px; padding:calc(10px + env(safe-area-inset-top)) 18px 0; flex-shrink:0; }
   .cat-header h2{ font-family:'Fraunces',serif; font-weight:500; font-size:22px; margin:0; flex:1; }
   .place-list{ margin-top:8px; }
   .place{ padding:14px 18px; border-bottom:1px solid var(--border); cursor:pointer; display:flex; align-items:center; gap:12px; }
@@ -104,9 +105,9 @@
   #screen-map{ padding-bottom:0; }
   #mapWrap{ flex:1; position:relative; min-height:0; display:flex; flex-direction:column; }
   #map{ flex:1; }
-  .map-topbar{ position:absolute; top:14px; left:14px; right:14px; z-index:500; display:flex; justify-content:space-between; }
+  .map-topbar{ position:absolute; top:calc(14px + env(safe-area-inset-top)); left:14px; right:14px; z-index:500; display:flex; justify-content:space-between; }
   .map-topbar button.icon-btn{ background:var(--overlay); backdrop-filter:blur(6px); }
-  .search-wrap{ position:absolute; top:60px; left:14px; right:14px; z-index:500; }
+  .search-wrap{ position:absolute; top:calc(60px + env(safe-area-inset-top)); left:14px; right:14px; z-index:500; }
   .search-wrap input{
     width:100%; background:var(--overlay); backdrop-filter:blur(6px); color:var(--text);
     border:1px solid var(--border); border-radius:10px; padding:10px 12px; font-size:13px; font-family:inherit;
@@ -287,6 +288,7 @@ function applyTheme(theme){
   document.documentElement.setAttribute('data-theme', theme);
   el('themeBtn').innerHTML = theme === 'light' ? '&#9728;' : '&#9789;';
   localStorage.setItem(THEME_KEY, theme);
+  setTileStyle(theme);
   if (map && currentTrip) renderMarkers();
 }
 function toggleTheme(){
@@ -313,14 +315,24 @@ function showScreen(id){
 }
 
 /* ---- map ---- */
+const TILE_STYLES = {
+  light: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+  dark:  'https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png'
+};
+const TILE_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+let tileLayer;
+
 function initMap(){
   map = L.map('map', { zoomControl: false });
   L.control.zoom({ position: 'bottomright' }).addTo(map);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; OpenStreetMap contributors'
-  }).addTo(map);
+  const theme = document.documentElement.getAttribute('data-theme') || 'dark';
+  tileLayer = L.tileLayer(TILE_STYLES[theme], { maxZoom: 20, attribution: TILE_ATTRIBUTION }).addTo(map);
   map.on('click', e => openEditor(null, e.latlng));
+}
+function setTileStyle(theme){
+  if (!map) return;
+  if (tileLayer) map.removeLayer(tileLayer);
+  tileLayer = L.tileLayer(TILE_STYLES[theme] || TILE_STYLES.dark, { maxZoom: 20, attribution: TILE_ATTRIBUTION }).addTo(map);
 }
 function pinIcon(cat){
   const color = getComputedStyle(document.documentElement).getPropertyValue('--' + cat).trim() || '#A39E97';
