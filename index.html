@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Trip Map</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1f232c; --border:#2a2f3a;
+    --text:#e8eaed; --muted:#9aa3af; --accent:#4da3ff;
+    --sight:#4da3ff; --food:#ff9f43; --beach:#2ed3b7; --hike:#a06cd5; --hotel:#ff6b81; --other:#8a94a6;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    display:flex; flex-direction:column;
+  }
+  header{
+    display:flex; align-items:center; gap:10px; padding:10px 14px;
+    background:var(--panel); border-bottom:1px solid var(--border); flex-wrap:wrap;
+  }
+  header h1{ font-size:16px; margin:0; margin-right:8px; white-space:nowrap; }
+  header select, header button, header input[type=text]{
+    background:var(--panel2); color:var(--text); border:1px solid var(--border);
+    border-radius:6px; padding:7px 10px; font-size:13px;
+  }
+  header button{ cursor:pointer; }
+  header button:hover{ border-color:var(--accent); }
+  #search{ flex:1; min-width:140px; }
+  #layout{ flex:1; display:flex; min-height:0; }
+  #map{ flex:1; }
+  #sidebar{
+    width:320px; max-width:42vw; background:var(--panel); border-left:1px solid var(--border);
+    overflow-y:auto; display:flex; flex-direction:column;
+  }
+  #sidebar h2{ font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:14px 14px 6px; }
+  .place{
+    padding:10px 14px; border-bottom:1px solid var(--border); cursor:pointer;
+  }
+  .place:hover{ background:var(--panel2); }
+  .place.visited{ opacity:.55; }
+  .place-top{ display:flex; align-items:center; gap:8px; }
+  .dot{ width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+  .place-name{ font-weight:600; font-size:14px; flex:1; }
+  .place-cat{ font-size:11px; color:var(--muted); }
+  .place-notes{ font-size:12px; color:var(--muted); margin-top:4px; white-space:pre-wrap; }
+  .empty-hint{ padding:14px; color:var(--muted); font-size:13px; line-height:1.5; }
+  #editor{
+    position:fixed; inset:0; background:rgba(0,0,0,.5); display:none;
+    align-items:center; justify-content:center; z-index:1000; padding:16px;
+  }
+  #editor.open{ display:flex; }
+  #editor-box{
+    background:var(--panel); border:1px solid var(--border); border-radius:10px;
+    padding:18px; width:100%; max-width:380px; display:flex; flex-direction:column; gap:10px;
+  }
+  #editor-box h3{ margin:0 0 4px; font-size:15px; }
+  #editor-box label{ font-size:12px; color:var(--muted); }
+  #editor-box input, #editor-box select, #editor-box textarea{
+    width:100%; background:var(--panel2); color:var(--text); border:1px solid var(--border);
+    border-radius:6px; padding:8px; font-size:13px; font-family:inherit;
+  }
+  #editor-box textarea{ min-height:70px; resize:vertical; }
+  .editor-row{ display:flex; gap:8px; }
+  .editor-actions{ display:flex; justify-content:space-between; margin-top:6px; gap:8px; }
+  .editor-actions .left button{ background:#3a1f24; border-color:#5a2a30; }
+  .btn-primary{ background:var(--accent) !important; color:#0f1115 !important; border-color:var(--accent) !important; font-weight:600; }
+  .leaflet-div-icon{ background:transparent; border:none; }
+  .pin{ width:18px; height:18px; border-radius:50% 50% 50% 0; transform:rotate(-45deg);
+    border:2px solid rgba(0,0,0,.4); box-shadow:0 1px 3px rgba(0,0,0,.5); }
+  @media (max-width:640px){
+    #sidebar{ position:fixed; right:0; top:45px; bottom:0; width:80vw; max-width:80vw; z-index:500;
+      transform:translateX(100%); transition:transform .2s; }
+    #sidebar.open{ transform:translateX(0); }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🗺️ Trip Map</h1>
+  <select id="tripSelect"></select>
+  <button id="newTripBtn">New trip</button>
+  <input id="search" type="text" placeholder="Search a place & press Enter…">
+  <button id="exportBtn">Export JSON</button>
+  <button id="importBtn">Import</button>
+  <button id="sidebarToggle" style="display:none;">Places</button>
+  <input id="importFile" type="file" accept="application/json" style="display:none;">
+</header>
+
+<div id="layout">
+  <div id="map"></div>
+  <div id="sidebar">
+    <h2 id="sidebarTitle">Places</h2>
+    <div id="placeList"></div>
+  </div>
+</div>
+
+<div id="editor">
+  <div id="editor-box">
+    <h3 id="editorHeading">Edit place</h3>
+    <div>
+      <label>Name</label>
+      <input id="f-name" type="text" placeholder="e.g. Nissi Beach">
+    </div>
+    <div class="editor-row">
+      <div style="flex:1">
+        <label>Category</label>
+        <select id="f-cat">
+          <option value="sight">Sight</option>
+          <option value="food">Food</option>
+          <option value="beach">Beach</option>
+          <option value="hike">Hike</option>
+          <option value="hotel">Hotel</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div style="flex:1">
+        <label>Visited</label>
+        <select id="f-visited">
+          <option value="0">Not yet</option>
+          <option value="1">Been</option>
+        </select>
+      </div>
+    </div>
+    <div>
+      <label>Notes</label>
+      <textarea id="f-notes" placeholder="Opening hours, why you want to go, tips…"></textarea>
+    </div>
+    <div class="editor-actions">
+      <div class="left"><button id="deleteBtn">Delete</button></div>
+      <div style="display:flex;gap:8px;">
+        <button id="cancelBtn">Cancel</button>
+        <button id="saveBtn" class="btn-primary">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const CATEGORY_COLORS = {
+  sight:'#4da3ff', food:'#ff9f43', beach:'#2ed3b7', hike:'#a06cd5', hotel:'#ff6b81', other:'#8a94a6'
+};
+const STORAGE_PREFIX = 'tripmap:';
+
+let map, markers = {}, currentTrip = null, currentTripFile = null, editingId = null, pendingLatLng = null;
+
+const el = id => document.getElementById(id);
+
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+
+function storageKey(file){ return STORAGE_PREFIX + file; }
+
+function loadTripList(){
+  return fetch('trips/index.json').then(r => r.json()).catch(() => ['cyprus.json']);
+}
+
+function loadTrip(file){
+  const saved = localStorage.getItem(storageKey(file));
+  if (saved) return Promise.resolve(JSON.parse(saved));
+  return fetch('trips/' + file).then(r => r.json());
+}
+
+function saveTrip(){
+  localStorage.setItem(storageKey(currentTripFile), JSON.stringify(currentTrip));
+}
+
+function initMap(){
+  map = L.map('map', { zoomControl: true });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+  map.on('click', e => openEditor(null, e.latlng));
+}
+
+function pinIcon(cat){
+  const color = CATEGORY_COLORS[cat] || CATEGORY_COLORS.other;
+  return L.divIcon({
+    className: 'leaflet-div-icon',
+    html: `<div class="pin" style="background:${color}"></div>`,
+    iconSize: [18,18],
+    iconAnchor: [9,16]
+  });
+}
+
+function renderMarkers(){
+  Object.values(markers).forEach(m => map.removeLayer(m));
+  markers = {};
+  currentTrip.places.forEach(p => {
+    const m = L.marker([p.lat, p.lng], { icon: pinIcon(p.category) }).addTo(map);
+    m.bindPopup(`<strong>${escapeHtml(p.name)}</strong>`);
+    m.on('click', () => openEditor(p.id));
+    markers[p.id] = m;
+  });
+}
+
+function renderList(){
+  el('sidebarTitle').textContent = `Places (${currentTrip.places.length})`;
+  const list = el('placeList');
+  if (!currentTrip.places.length){
+    list.innerHTML = `<div class="empty-hint">No places yet. Click anywhere on the map, or search above, to drop a pin.</div>`;
+    return;
+  }
+  list.innerHTML = '';
+  currentTrip.places.forEach(p => {
+    const div = document.createElement('div');
+    div.className = 'place' + (p.visited ? ' visited' : '');
+    div.innerHTML = `
+      <div class="place-top">
+        <span class="dot" style="background:${CATEGORY_COLORS[p.category]||CATEGORY_COLORS.other}"></span>
+        <span class="place-name">${escapeHtml(p.name)}</span>
+        <span class="place-cat">${p.category}</span>
+      </div>
+      ${p.notes ? `<div class="place-notes">${escapeHtml(p.notes)}</div>` : ''}
+    `;
+    div.addEventListener('click', () => {
+      map.flyTo([p.lat, p.lng], Math.max(map.getZoom(), 13));
+      markers[p.id].openPopup();
+      openEditor(p.id);
+    });
+    list.appendChild(div);
+  });
+}
+
+function escapeHtml(s){
+  return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function openEditor(id, latlng){
+  editingId = id;
+  pendingLatLng = latlng || null;
+  const isNew = !id;
+  el('editorHeading').textContent = isNew ? 'New place' : 'Edit place';
+  el('deleteBtn').style.display = isNew ? 'none' : 'inline-block';
+  if (isNew){
+    el('f-name').value = '';
+    el('f-cat').value = 'sight';
+    el('f-visited').value = '0';
+    el('f-notes').value = '';
+  } else {
+    const p = currentTrip.places.find(p => p.id === id);
+    el('f-name').value = p.name;
+    el('f-cat').value = p.category;
+    el('f-visited').value = p.visited ? '1' : '0';
+    el('f-notes').value = p.notes || '';
+  }
+  el('editor').classList.add('open');
+  setTimeout(() => el('f-name').focus(), 50);
+}
+
+function closeEditor(){
+  el('editor').classList.remove('open');
+  editingId = null;
+  pendingLatLng = null;
+}
+
+function saveEditor(){
+  const name = el('f-name').value.trim();
+  if (!name){ el('f-name').focus(); return; }
+  const data = {
+    name,
+    category: el('f-cat').value,
+    visited: el('f-visited').value === '1',
+    notes: el('f-notes').value.trim()
+  };
+  if (editingId){
+    Object.assign(currentTrip.places.find(p => p.id === editingId), data);
+  } else if (pendingLatLng){
+    currentTrip.places.push({ id: uid(), lat: pendingLatLng.lat, lng: pendingLatLng.lng, ...data });
+  }
+  saveTrip();
+  renderMarkers();
+  renderList();
+  closeEditor();
+}
+
+function deletePlace(){
+  currentTrip.places = currentTrip.places.filter(p => p.id !== editingId);
+  saveTrip();
+  renderMarkers();
+  renderList();
+  closeEditor();
+}
+
+function setTrip(file, data){
+  currentTripFile = file;
+  currentTrip = data;
+  map.setView(data.center || [20,0], data.zoom || 4);
+  renderMarkers();
+  renderList();
+}
+
+function populateTripSelect(files, activeFile){
+  const sel = el('tripSelect');
+  sel.innerHTML = '';
+  files.forEach(f => {
+    const opt = document.createElement('option');
+    opt.value = f;
+    opt.textContent = f.replace(/\.json$/, '');
+    sel.appendChild(opt);
+  });
+  sel.value = activeFile;
+}
+
+async function boot(){
+  initMap();
+  const files = await loadTripList();
+  const startFile = files[0];
+  const data = await loadTrip(startFile);
+  populateTripSelect(files, startFile);
+  setTrip(startFile, data);
+
+  el('tripSelect').addEventListener('change', async e => {
+    const file = e.target.value;
+    const data = await loadTrip(file);
+    setTrip(file, data);
+  });
+
+  el('newTripBtn').addEventListener('click', async () => {
+    const name = prompt('Trip name?');
+    if (!name) return;
+    const file = name.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '.json';
+    const data = { name, center: [20,0], zoom: 4, places: [] };
+    localStorage.setItem(storageKey(file), JSON.stringify(data));
+    const files = await loadTripList();
+    const allFiles = files.includes(file) ? files : [...files, file];
+    populateTripSelect(allFiles, file);
+    setTrip(file, data);
+  });
+
+  el('saveBtn').addEventListener('click', saveEditor);
+  el('cancelBtn').addEventListener('click', closeEditor);
+  el('deleteBtn').addEventListener('click', deletePlace);
+
+  el('exportBtn').addEventListener('click', () => {
+    const blob = new Blob([JSON.stringify(currentTrip, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = currentTripFile;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  el('importBtn').addEventListener('click', () => el('importFile').click());
+  el('importFile').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        setTrip(currentTripFile, data);
+        saveTrip();
+      } catch (err) {
+        alert('Could not read that file: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  });
+
+  el('search').addEventListener('keydown', async e => {
+    if (e.key !== 'Enter') return;
+    const q = e.target.value.trim();
+    if (!q) return;
+    const res = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q));
+    const results = await res.json();
+    if (!results.length){ alert('No results for "' + q + '"'); return; }
+    const { lat, lon, display_name } = results[0];
+    map.flyTo([lat, lon], 14);
+    openEditor(null, { lat: parseFloat(lat), lng: parseFloat(lon) });
+    el('f-name').value = display_name.split(',')[0];
+  });
+
+  document.getElementById('editor').addEventListener('click', e => {
+    if (e.target.id === 'editor') closeEditor();
+  });
+}
+
+boot();
+</script>
+</body>
+</html>
