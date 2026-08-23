@@ -9,23 +9,6 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#181B15; --surface:#212418; --surface2:#292D1E; --border:#3A3E2C;
-    --text:#ECE6D3; --muted:#9CA089; --accent:#8FA07E; --accent-ink:#12150E;
-    --sight:#B7C4A6;      --sight-soft:#2c331f;
-    --food:#D3B87C;       --food-soft:#3a3320;
-    --beach:#8FB3AE;      --beach-soft:#213230;
-    --historical:#C2A574; --historical-soft:#3a3323;
-    --fruit:#E0916B;      --fruit-soft:#3a2a1e;
-    --shops:#C98FB0;      --shops-soft:#332733;
-    --general:#9CA089;    --general-soft:#292D1E;
-    --activity:#A3B562;   --activity-soft:#33361e;
-    --stays:#C7A088;      --stays-soft:#332821;
-    --airport:#8FA0C7;    --airport-soft:#232c3a;
-    --hike:#A8A3C9;       --hike-soft:#282738;
-    --overlay:rgba(24,27,21,.8);
-    --danger-bg:#332020; --danger-border:#4a2a2a; --danger-text:#d98787;
-  }
-  :root[data-theme="light"]{
     --bg:#F3F0E2; --surface:#FAF8EF; --surface2:#EFEBDC; --border:#DBD5C0;
     --text:#262A1C; --muted:#6E7260; --accent:#5D7350; --accent-ink:#F6F5EA;
     --sight:#4F6B44;      --sight-soft:#DCE4CC;
@@ -54,7 +37,7 @@
     border-left:1px solid var(--border); border-right:1px solid var(--border); overflow:hidden; }
 
   /* ---- top bar (shared) ---- */
-  .topbar{ display:flex; align-items:center; justify-content:space-between; padding:calc(10px + env(safe-area-inset-top)) 18px 0; flex-shrink:0; }
+  .topbar{ display:flex; align-items:center; justify-content:flex-end; padding:calc(10px + env(safe-area-inset-top)) 18px 0; flex-shrink:0; }
   .topbar button.icon-btn{
     background:none; border:1px solid var(--border); color:var(--text); border-radius:10px;
     width:34px; height:34px; font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center;
@@ -75,7 +58,9 @@
     position:relative; height:clamp(64px,11vh,96px); background:linear-gradient(160deg,var(--surface2),var(--surface));
     display:flex; align-items:flex-end; padding:12px; cursor:pointer; flex-shrink:0;
   }
-  .hero-pill{ background:var(--overlay); border:1px solid var(--border); border-radius:10px; padding:7px 11px; font-size:13px; }
+  .hero-map{ position:absolute; inset:0; z-index:0; pointer-events:none; }
+  .hero-photo{ position:absolute; inset:0; z-index:0; background-size:cover; background-position:center; display:none; }
+  .hero-pill{ position:relative; z-index:1; background:var(--overlay); border:1px solid var(--border); border-radius:10px; padding:7px 11px; font-size:13px; }
   .hero-pill b{ font-weight:600; }
   .hero-pill .count{ color:var(--muted); font-size:11px; }
   .hero-empty{ color:var(--muted); font-size:13px; }
@@ -215,7 +200,6 @@
   <!-- HOME -->
   <section id="screen-home" class="screen active">
     <div class="topbar">
-      <button class="icon-btn" id="themeBtn">&#9728;</button>
       <button class="icon-btn" id="menuBtn">&#8942;</button>
     </div>
     <div class="home-header">
@@ -225,6 +209,8 @@
     </div>
 
     <div class="hero" id="heroCard">
+      <div id="heroMap" class="hero-map"></div>
+      <div id="heroPhoto" class="hero-photo"></div>
       <div class="hero-pill" id="heroPill"><span class="hero-empty">No places yet — tap the map to start</span></div>
     </div>
 
@@ -334,18 +320,21 @@
 <script>
 const APP_VERSION = '1.2.0';
 
+function svgIcon(paths){
+  return `<svg viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+}
 const CATEGORIES = [
-  { key:'sight',      label:'Sights',           icon:'&#9678;' },
-  { key:'food',       label:'Food & Drink',      icon:'&#10022;' },
-  { key:'beach',       label:'Beaches',          icon:'&#8776;' },
-  { key:'historical', label:'Historical',        icon:'&#127963;' },
-  { key:'fruit',       label:'Fruit',            icon:'&#127826;' },
-  { key:'shops',       label:'Shops',            icon:'&#128717;' },
-  { key:'activity',   label:'Activity',          icon:'&#9889;' },
-  { key:'stays',       label:'Stays',            icon:'&#8962;' },
-  { key:'airport',    label:'Airport & Travel',  icon:'&#9992;' },
-  { key:'general',    label:'General',           icon:'&#9633;' },
-  { key:'hike',        label:'Hikes',            icon:'&#9650;' },
+  { key:'sight',      label:'Sights',           icon:svgIcon('<path d="M2 10 Q10 3 18 10 Q10 17 2 10 Z"/><circle cx="10" cy="10" r="2.2"/>') },
+  { key:'food',       label:'Food & Drink',      icon:svgIcon('<path d="M6 2v4a2 2 0 0 0 4 0V2M8 6v12"/><path d="M14 2v6a2 2 0 0 0 2 2M14 2v6M14 10v8"/>') },
+  { key:'beach',      label:'Beaches',           icon:svgIcon('<path d="M2 7c2-1.5 4 1.5 6 0s4 1.5 6 0 3-1.2 4-1M2 12c2-1.5 4 1.5 6 0s4 1.5 6 0 3-1.2 4-1M2 17c2-1.5 4 1.5 6 0s4 1.5 6 0 3-1.2 4-1"/>') },
+  { key:'historical', label:'Historical',        icon:svgIcon('<path d="M10 2 3 8h14L10 2Z"/><path d="M4 8v8M8 8v8M12 8v8M16 8v8M2 18h16"/>') },
+  { key:'fruit',      label:'Fruit',             icon:svgIcon('<path d="M10 8c-3-3-8-1-8 4 0 4 3 7 6 7 1 0 1.5-.5 2-.5s1 .5 2 .5c3 0 6-3 6-7 0-3.5-3-5.5-6-4"/><path d="M10 8V5c0-1.5 1-2 2-2"/>') },
+  { key:'shops',      label:'Shops',             icon:svgIcon('<path d="M5 7h10l1 11H4L5 7Z"/><path d="M7 7a3 3 0 0 1 6 0"/>') },
+  { key:'activity',   label:'Activity',          icon:svgIcon('<path d="M5 2v16"/><path d="M5 3h9l-2.5 3L14 9H5"/>') },
+  { key:'stays',      label:'Stays',             icon:svgIcon('<path d="M2 16V6a1 1 0 0 1 1-1h1v6M2 12h16v4M6 11a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v1H6v-1Z"/><path d="M18 16v2M2 16v2"/>') },
+  { key:'airport',    label:'Airport & Travel',  icon:svgIcon('<path d="M10 2v6M10 8 3 12v2l7-2v4l-2 2v1l3-1 3 1v-1l-2-2v-4l7 2v-2l-7-4-.001-6Z"/>') },
+  { key:'general',    label:'General',           icon:svgIcon('<path d="M5 2h10v16l-5-4-5 4V2Z"/>') },
+  { key:'hike',       label:'Hikes',             icon:svgIcon('<path d="M2 17 8 6l3 5 2-3 5 9H2Z"/>') },
 ];
 const CAT_BY_KEY = Object.fromEntries(CATEGORIES.map(c => [c.key, c]));
 const DEFAULT_VISIBLE_CATEGORIES = CATEGORIES.filter(c => c.key !== 'hike').map(c => c.key);
@@ -353,25 +342,13 @@ const CATEGORY_MIGRATIONS = { hotel:'stays', other:'general' };
 const STORAGE_PREFIX = 'tripmap:';
 
 let map, markers = {}, currentTrip = null, currentTripFile = null, editingId = null, pendingLatLng = null;
+let heroMap, heroMarkersLayer;
 let activeCategory = null, pendingPhoto = null, placing = false;
 
 const el = id => document.getElementById(id);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
 const storageKey = file => STORAGE_PREFIX + file;
 const escapeHtml = s => (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-
-const THEME_KEY = 'tripmap:theme';
-function applyTheme(theme){
-  document.documentElement.setAttribute('data-theme', theme);
-  el('themeBtn').innerHTML = theme === 'light' ? '&#9728;' : '&#9789;';
-  localStorage.setItem(THEME_KEY, theme);
-  setTileStyle(theme);
-  if (map && currentTrip) renderMarkers();
-}
-function toggleTheme(){
-  const current = document.documentElement.getAttribute('data-theme') || 'dark';
-  applyTheme(current === 'light' ? 'dark' : 'light');
-}
 
 function loadTripList(){
   return fetch('trips/index.json').then(r => r.json()).catch(() => ['cyprus.json']);
@@ -424,19 +401,38 @@ function showScreen(id){
 }
 
 /* ---- map ---- */
-const TILE_STYLES = {
-  light: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-  dark:  'https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png'
-};
+const TILE_URL = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
 const TILE_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
-let tileLayer;
 
 function initMap(){
   map = L.map('map', { zoomControl: false });
   L.control.zoom({ position: 'bottomright' }).addTo(map);
-  const theme = document.documentElement.getAttribute('data-theme') || 'dark';
-  tileLayer = L.tileLayer(TILE_STYLES[theme], { maxZoom: 20, attribution: TILE_ATTRIBUTION }).addTo(map);
+  L.tileLayer(TILE_URL, { maxZoom: 20, attribution: TILE_ATTRIBUTION }).addTo(map);
   map.on('click', e => { if (!placing) openEditor(null, e.latlng); });
+}
+function initHeroMap(){
+  heroMap = L.map('heroMap', {
+    zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false,
+    doubleClickZoom: false, boxZoom: false, keyboard: false, touchZoom: false, tap: false, fadeAnimation: false
+  });
+  L.tileLayer(TILE_URL, { maxZoom: 20 }).addTo(heroMap);
+  heroMarkersLayer = L.layerGroup().addTo(heroMap);
+}
+function updateHeroMap(){
+  if (!heroMap) return;
+  heroMarkersLayer.clearLayers();
+  const places = currentTrip.places;
+  if (places.length){
+    places.forEach(p => {
+      const color = getComputedStyle(document.documentElement).getPropertyValue('--' + p.category).trim() || '#6E7260';
+      L.circleMarker([p.lat, p.lng], { radius: 5, color: '#FAF8EF', weight: 1.5, fillColor: color, fillOpacity: 1 }).addTo(heroMarkersLayer);
+    });
+    const bounds = L.latLngBounds(places.map(p => [p.lat, p.lng]));
+    heroMap.fitBounds(bounds.pad(0.35), { animate: false, maxZoom: 13 });
+  } else {
+    heroMap.setView(currentTrip.center || [20, 0], Math.max((currentTrip.zoom || 4) - 1, 2), { animate: false });
+  }
+  setTimeout(() => heroMap.invalidateSize(), 0);
 }
 function startPlacing(){
   placing = true;
@@ -451,11 +447,6 @@ function stopPlacing(){
   el('placeConfirmBar').classList.remove('show');
   el('mapAddBtn').style.display = 'flex';
   el('search').closest('.search-wrap').style.display = 'block';
-}
-function setTileStyle(theme){
-  if (!map) return;
-  if (tileLayer) map.removeLayer(tileLayer);
-  tileLayer = L.tileLayer(TILE_STYLES[theme] || TILE_STYLES.dark, { maxZoom: 20, attribution: TILE_ATTRIBUTION }).addTo(map);
 }
 function pinIcon(cat){
   const color = getComputedStyle(document.documentElement).getPropertyValue('--' + cat).trim() || '#A39E97';
@@ -484,15 +475,13 @@ function renderHome(){
     : 'No places yet';
 
   const next = currentTrip.places.find(p => !p.visited);
-  const hero = el('heroCard');
+  const heroPhoto = el('heroPhoto');
   if (next && next.photo){
-    hero.style.backgroundImage = `linear-gradient(160deg, rgba(0,0,0,.1), rgba(0,0,0,.55)), url(${next.photo})`;
-    hero.style.backgroundSize = 'cover';
-    hero.style.backgroundPosition = 'center';
+    heroPhoto.style.backgroundImage = `linear-gradient(160deg, rgba(0,0,0,.1), rgba(0,0,0,.55)), url(${next.photo})`;
+    heroPhoto.style.display = 'block';
   } else {
-    hero.style.backgroundImage = '';
-    hero.style.backgroundSize = '';
-    hero.style.backgroundPosition = '';
+    heroPhoto.style.display = 'none';
+    updateHeroMap();
   }
   if (next){
     el('heroPill').innerHTML = `<b>${escapeHtml(next.name)}</b><div class="count">Next up</div>`;
@@ -673,6 +662,7 @@ async function boot(){
   el('versionTag').textContent = 'v' + APP_VERSION;
   populateCategorySelect();
   initMap();
+  initHeroMap();
   const files = await loadTripList();
   const startFile = files[0];
   const data = await loadTrip(startFile);
@@ -716,7 +706,6 @@ async function boot(){
   });
 
   el('menuBtn').addEventListener('click', () => el('menu').classList.add('open'));
-  el('themeBtn').addEventListener('click', toggleTheme);
   el('menu').addEventListener('click', e => { if (e.target.id === 'menu') el('menu').classList.remove('open'); });
 
   el('tripSelect').addEventListener('change', async e => {
@@ -787,7 +776,6 @@ async function boot(){
   });
 }
 
-applyTheme(localStorage.getItem(THEME_KEY) || 'dark');
 boot();
 </script>
 </body>
