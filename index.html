@@ -58,17 +58,18 @@
 
   /* ---- home screen ---- */
   .screen{ display:none; flex-direction:column; flex:1; min-height:0; overflow-y:auto; padding-bottom:16px; }
-  #screen-home{ overflow:hidden; padding-bottom:calc(26px + env(safe-area-inset-bottom)); }
+  #screen-home{ overflow:hidden; padding-bottom:calc(14px + env(safe-area-inset-bottom)); }
   .screen.active{ display:flex; }
-  .eyebrow{ font-size:11px; color:var(--muted); letter-spacing:.06em; text-transform:uppercase; margin-bottom:4px; }
-  h1.trip-title{ font-family:'Fraunces',serif; font-weight:500; font-size:clamp(22px,7vh,30px); margin:0 0 2px; letter-spacing:-.01em; line-height:1.1; }
-  .trip-sub{ color:var(--muted); font-size:13px; }
+  .eyebrow{ font-size:12px; color:var(--muted); letter-spacing:.06em; text-transform:uppercase; margin-bottom:4px; font-weight:600; }
+  h1.trip-title{ font-family:'Fraunces',serif; font-weight:500; font-size:clamp(26px,7.5vh,34px); margin:0 0 2px; letter-spacing:-.01em; line-height:1.1; }
+  .trip-sub{ color:var(--muted); font-size:14px; }
   .home-header{ padding:6px 18px 0; flex-shrink:0; }
 
   .hero{
     margin:12px 18px 0; border-radius:16px; overflow:hidden; border:1px solid var(--border);
-    position:relative; height:clamp(64px,11vh,96px); background:linear-gradient(160deg,var(--surface2),var(--surface));
+    position:relative; height:clamp(90px,15vh,150px); background:linear-gradient(160deg,var(--surface2),var(--surface));
     display:flex; align-items:flex-end; padding:12px; cursor:pointer; flex-shrink:0;
+    box-shadow:0 1px 3px rgba(38,42,28,.05);
   }
   .hero-map{ position:absolute; inset:0; z-index:0; pointer-events:none; }
   .hero-photo{ position:absolute; inset:0; z-index:0; background-size:cover; background-position:center; display:none; }
@@ -80,12 +81,13 @@
   .grid{ display:grid; grid-template-columns:1fr 1fr; grid-template-rows:repeat(3,minmax(0,1fr)); gap:8px; margin:10px 18px 0; flex:1; min-height:0; }
   .card{
     background:var(--surface); border:1px solid var(--border); border-radius:14px;
-    padding:10px 14px; display:flex; flex-direction:column; justify-content:center; gap:6px; cursor:pointer; min-height:0;
+    padding:10px 14px; display:flex; flex-direction:column; justify-content:center; gap:4px; cursor:pointer; min-height:0;
+    box-shadow:0 1px 3px rgba(38,42,28,.04); overflow:hidden;
   }
   .card:hover{ border-color:var(--accent); }
   .cat-icon{ width:30px; height:30px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:15px; flex-shrink:0; }
-  .card-title{ font-size:14px; font-weight:600; line-height:1.15; }
-  .card-count{ font-size:12px; color:var(--muted); line-height:1.15; }
+  .card-title{ font-size:15px; font-weight:600; line-height:1.15; }
+  .card-count{ font-size:13px; color:var(--muted); line-height:1.15; }
   .chev{ color:var(--muted); font-size:18px; }
 
   .primary-btn{
@@ -96,14 +98,14 @@
 
   /* ---- category / list screen ---- */
   .cat-header{ display:flex; align-items:center; gap:10px; padding:calc(10px + env(safe-area-inset-top)) 18px 0; flex-shrink:0; }
-  .cat-header h2{ font-family:'Fraunces',serif; font-weight:500; font-size:22px; margin:0; flex:1; }
+  .cat-header h2{ font-family:'Fraunces',serif; font-weight:500; font-size:25px; margin:0; flex:1; }
   .place-list{ margin-top:8px; }
   .place{ padding:14px 18px; border-bottom:1px solid var(--border); cursor:pointer; display:flex; align-items:center; gap:12px; }
   .place:hover{ background:var(--surface); }
   .place.visited .place-name{ text-decoration:line-through; color:var(--muted); }
   .place-dot{ width:9px; height:9px; border-radius:50%; flex-shrink:0; }
   .place-thumb{ width:36px; height:36px; border-radius:8px; object-fit:cover; flex-shrink:0; }
-  .place-name{ font-weight:500; font-size:14px; flex:1; }
+  .place-name{ font-weight:500; font-size:15px; flex:1; }
   .place-visited-tag{ font-size:11px; color:var(--muted); }
   .empty-hint{ padding:24px 18px; color:var(--muted); font-size:13px; line-height:1.6; text-align:center; }
 
@@ -158,9 +160,9 @@
   .place-confirm-bar.show{ display:flex; }
   .place-confirm-bar .btn{ flex:1; }
   .place-confirm-bar .btn-primary{ flex:2; }
-  .version-tag{
-    position:absolute; bottom:6px; left:10px; font-size:10px; color:var(--muted); opacity:.55;
-    z-index:10; pointer-events:none;
+  .menu-footer{
+    text-align:center; font-size:11px; color:var(--muted); opacity:.7; padding:14px 14px 4px;
+    border-top:1px solid var(--border); margin-top:8px; line-height:1.6;
   }
 
 
@@ -222,7 +224,6 @@
 </head>
 <body>
 <div id="app">
-  <div id="versionTag" class="version-tag"></div>
 
   <!-- HOME -->
   <section id="screen-home" class="screen active">
@@ -342,6 +343,7 @@
     <div class="menu-item" id="exportItem"><span>Export JSON</span><span>&#8595;</span></div>
     <div class="menu-item" id="importItem"><span>Import JSON</span><span>&#8593;</span></div>
     <input id="importFile" type="file" accept="application/json">
+    <div class="menu-footer" id="menuFooter">Trip Map</div>
   </div>
 </div>
 
@@ -349,7 +351,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.6.0';
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
@@ -477,17 +479,11 @@ function initHeroMap(){
 function updateHeroMap(){
   if (!heroMap) return;
   heroMarkersLayer.clearLayers();
-  const places = currentTrip.places;
-  if (places.length){
-    places.forEach(p => {
-      const color = getComputedStyle(document.documentElement).getPropertyValue('--' + p.category).trim() || '#6E7260';
-      L.circleMarker([p.lat, p.lng], { radius: 5, color: '#FAF8EF', weight: 1.5, fillColor: color, fillOpacity: 1 }).addTo(heroMarkersLayer);
-    });
-    const bounds = L.latLngBounds(places.map(p => [p.lat, p.lng]));
-    heroMap.fitBounds(bounds.pad(0.35), { animate: false, maxZoom: 13 });
-  } else {
-    heroMap.setView(currentTrip.center || [20, 0], Math.max((currentTrip.zoom || 4) - 1, 2), { animate: false });
-  }
+  currentTrip.places.forEach(p => {
+    const color = getComputedStyle(document.documentElement).getPropertyValue('--' + p.category).trim() || '#6E7260';
+    L.circleMarker([p.lat, p.lng], { radius: 5, color: '#FAF8EF', weight: 1.5, fillColor: color, fillOpacity: 1 }).addTo(heroMarkersLayer);
+  });
+  heroMap.setView(currentTrip.center || [20, 0], Math.max((currentTrip.zoom || 4) - 2, 2), { animate: false });
   setTimeout(() => heroMap.invalidateSize(), 0);
 }
 function startPlacing(){
@@ -776,7 +772,7 @@ function populateTripSelect(files, activeFile){
 }
 
 async function boot(){
-  el('versionTag').textContent = 'v' + APP_VERSION;
+  el('menuFooter').innerHTML = `Trip Map v${APP_VERSION}<br>Designed by George Philippou &middot; Made with AI`;
   populateCategorySelect();
   initMap();
   initHeroMap();
