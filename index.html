@@ -351,7 +351,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.7.0';
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
@@ -364,6 +364,7 @@ const FIREBASE_CONFIG = {
 };
 const DEFAULT_ROOM = 'philippou-megan-8x4q';
 const ROOM_KEY = 'tripmap:room';
+const LOCAL_TRIPS_KEY = 'tripmap:localtrips';
 let fbApp, fbDb, fbRef;
 try {
   fbApp = firebase.initializeApp(FIREBASE_CONFIG);
@@ -390,7 +391,6 @@ const CATEGORIES = [
 const CAT_BY_KEY = Object.fromEntries(CATEGORIES.map(c => [c.key, c]));
 const DEFAULT_VISIBLE_CATEGORIES = CATEGORIES.filter(c => c.key !== 'hike').map(c => c.key);
 const CATEGORY_MIGRATIONS = { hotel:'stays', other:'general' };
-const STORAGE_PREFIX = 'tripmap:';
 
 let map, markers = {}, currentTrip = null, currentTripFile = null, editingId = null, pendingLatLng = null;
 let heroMap, heroMarkersLayer;
@@ -398,36 +398,66 @@ let activeCategory = null, pendingPhoto = null, placing = false;
 
 const el = id => document.getElementById(id);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
-const storageKey = file => STORAGE_PREFIX + file;
 const escapeHtml = s => (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 function loadTripList(){
-  return fetch('trips/index.json').then(r => r.json()).catch(() => ['cyprus.json']);
+  return fetch('trips/index.json', { cache: 'no-store' }).then(r => r.json()).catch(() => ['cyprus.json'])
+    .then(committed => {
+      const extra = JSON.parse(localStorage.getItem(LOCAL_TRIPS_KEY) || '[]');
+      const merged = committed.slice();
+      extra.forEach(f => { if (!merged.includes(f)) merged.push(f); });
+      return merged;
+    });
 }
-function loadTrip(file){
-  const saved = localStorage.getItem(storageKey(file));
-  if (saved) return Promise.resolve(JSON.parse(saved));
-  return fetch('trips/' + file).then(r => r.json());
+function loadTripDefinition(file, knownFiles){
+  if (knownFiles.includes(file)){
+    return fetch('trips/' + file, { cache: 'no-store' }).then(r => r.json());
+  }
+  const shell = localStorage.getItem('tripmap:shell:' + file);
+  if (shell) return Promise.resolve(JSON.parse(shell));
+  return Promise.resolve({ name: file.replace(/\.json$/, ''), dates: '', center: [20, 0], zoom: 4, suggestions: {} });
 }
 function tripKey(file){ return (file || '').replace(/\.json$/, ''); }
+function loadLocalPlaces(file){
+  const saved = localStorage.getItem('tripmap:content:' + file);
+  return saved ? JSON.parse(saved) : [];
+}
+function loadVisibleCategories(file){
+  const saved = localStorage.getItem('tripmap:visible:' + file);
+  return saved ? JSON.parse(saved) : DEFAULT_VISIBLE_CATEGORIES.slice();
+}
+function saveVisibleCategories(file, arr){
+  localStorage.setItem('tripmap:visible:' + file, JSON.stringify(arr));
+}
 function saveTrip(){
-  localStorage.setItem(storageKey(currentTripFile), JSON.stringify(currentTrip));
+  localStorage.setItem('tripmap:content:' + currentTripFile, JSON.stringify(currentTrip.places));
   if (fbDb){
-    fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(currentTripFile)).set({
-      places: currentTrip.places,
-      visibleCategories: currentTrip.visibleCategories
-    });
+    fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(currentTripFile) + '/places').set(currentTrip.places);
   }
 }
-function migrateTrip(trip){
+function zoomForPlaceRank(rank){
+  if (rank == null) return 9;
+  if (rank <= 4) return 5;   // continent / country
+  if (rank <= 8) return 7;   // state / province / metropolis
+  if (rank <= 10) return 9;  // county / large region
+  if (rank <= 12) return 10; // large city / metro area
+  if (rank <= 16) return 12; // city / town
+  if (rank <= 18) return 14; // suburb / neighbourhood
+  return 15;
+}
+function boundsSpanReasonable(bounds, rank){
+  if (!bounds) return false;
+  const [[south, west], [north, east]] = bounds;
+  const span = Math.max(north - south, east - west);
+  const maxAllowed = rank == null ? 15
+    : rank <= 4 ? 70 : rank <= 8 ? 15 : rank <= 10 ? 6 : rank <= 12 ? 2.5 : rank <= 16 ? 1.2 : 0.6;
+  return span <= maxAllowed;
+}
+function migratePlaces(places){
   let changed = false;
-  trip.places.forEach(p => {
+  places.forEach(p => {
     if (CATEGORY_MIGRATIONS[p.category]){ p.category = CATEGORY_MIGRATIONS[p.category]; changed = true; }
   });
-  if (!Array.isArray(trip.visibleCategories)){
-    trip.visibleCategories = DEFAULT_VISIBLE_CATEGORIES.slice();
-    changed = true;
-  }
   return changed;
 }
 function resizeImageFile(file, maxDim, quality){
@@ -483,7 +513,11 @@ function updateHeroMap(){
     const color = getComputedStyle(document.documentElement).getPropertyValue('--' + p.category).trim() || '#6E7260';
     L.circleMarker([p.lat, p.lng], { radius: 5, color: '#FAF8EF', weight: 1.5, fillColor: color, fillOpacity: 1 }).addTo(heroMarkersLayer);
   });
-  heroMap.setView(currentTrip.center || [20, 0], Math.max((currentTrip.zoom || 4) - 2, 2), { animate: false });
+  if (currentTrip.bounds){
+    heroMap.fitBounds(currentTrip.bounds, { animate: false, maxZoom: 15, padding: [4, 4] });
+  } else {
+    heroMap.setView(currentTrip.center || [20, 0], Math.max((currentTrip.zoom || 4) - 2, 2), { animate: false });
+  }
   setTimeout(() => heroMap.invalidateSize(), 0);
 }
 function startPlacing(){
@@ -588,7 +622,7 @@ function toggleCategoryVisible(key){
   const idx = currentTrip.visibleCategories.indexOf(key);
   if (idx >= 0) currentTrip.visibleCategories.splice(idx, 1);
   else currentTrip.visibleCategories.push(key);
-  saveTrip();
+  saveVisibleCategories(currentTripFile, currentTrip.visibleCategories);
   renderCatSettings();
   renderHome();
 }
@@ -728,35 +762,48 @@ function deletePlace(){
 }
 
 /* ---- trips ---- */
-function setTrip(file, data){
+function setTrip(file, definition){
   if (fbRef) { fbRef.off(); fbRef = null; }
   currentTripFile = file;
-  currentTrip = data;
-  migrateTrip(currentTrip);
-  map.setView(data.center || [20,0], data.zoom || 4);
+  currentTrip = {
+    name: definition.name,
+    dates: definition.dates || '',
+    center: definition.center || [20, 0],
+    zoom: definition.zoom || 4,
+    bounds: definition.bounds || null,
+    suggestions: definition.suggestions || {},
+    places: [],
+    visibleCategories: loadVisibleCategories(file)
+  };
+  if (currentTrip.bounds) map.fitBounds(currentTrip.bounds, { maxZoom: 15 });
+  else map.setView(currentTrip.center, currentTrip.zoom);
   renderMarkers();
   renderHome();
 
   if (fbDb){
-    fbRef = fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(file));
+    fbRef = fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(file) + '/places');
     fbRef.on('value', snap => {
       if (file !== currentTripFile) return;
       const remote = snap.val();
-      if (remote){
-        currentTrip.places = Array.isArray(remote.places) ? remote.places : [];
-        currentTrip.visibleCategories = (Array.isArray(remote.visibleCategories) && remote.visibleCategories.length)
-          ? remote.visibleCategories : DEFAULT_VISIBLE_CATEGORIES.slice();
-        migrateTrip(currentTrip);
-        localStorage.setItem(storageKey(currentTripFile), JSON.stringify(currentTrip));
+      if (Array.isArray(remote)){
+        currentTrip.places = remote;
+      } else if (remote && typeof remote === 'object'){
+        currentTrip.places = Object.values(remote);
       } else {
-        fbRef.set({ places: currentTrip.places, visibleCategories: currentTrip.visibleCategories });
+        currentTrip.places = loadLocalPlaces(file);
+        fbRef.set(currentTrip.places);
       }
+      migratePlaces(currentTrip.places);
+      localStorage.setItem('tripmap:content:' + file, JSON.stringify(currentTrip.places));
       renderMarkers();
       renderHome();
       if (activeCategory && el('screen-category').classList.contains('active')) openCategory(activeCategory);
     });
   } else {
-    localStorage.setItem(storageKey(currentTripFile), JSON.stringify(currentTrip));
+    currentTrip.places = loadLocalPlaces(file);
+    migratePlaces(currentTrip.places);
+    renderMarkers();
+    renderHome();
   }
 }
 function populateTripSelect(files, activeFile){
@@ -778,9 +825,9 @@ async function boot(){
   initHeroMap();
   const files = await loadTripList();
   const startFile = files[0];
-  const data = await loadTrip(startFile);
+  const definition = await loadTripDefinition(startFile, files);
   populateTripSelect(files, startFile);
-  setTrip(startFile, data);
+  setTrip(startFile, definition);
 
   el('viewMapBtn').addEventListener('click', () => showScreen('screen-map'));
   el('mapBackBtn').addEventListener('click', () => { stopPlacing(); showScreen('screen-home'); });
@@ -834,21 +881,54 @@ async function boot(){
 
   el('tripSelect').addEventListener('change', async e => {
     const file = e.target.value;
-    const data = await loadTrip(file);
-    setTrip(file, data);
+    const files = await loadTripList();
+    const definition = await loadTripDefinition(file, files);
+    setTrip(file, definition);
     el('menu').classList.remove('open');
   });
 
   el('newTripItem').addEventListener('click', async () => {
-    const name = prompt('Trip name?');
-    if (!name) return;
-    const file = name.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '.json';
-    const data = { name, dates:'', center: [20,0], zoom: 4, places: [], visibleCategories: DEFAULT_VISIBLE_CATEGORIES.slice() };
-    localStorage.setItem(storageKey(file), JSON.stringify(data));
+    const name = prompt('Trip name? (e.g. "Amsterdam", or a whole country like "Japan")');
+    if (!name || !name.trim()) return;
+    const trimmed = name.trim();
+    const file = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '.json';
     const files = await loadTripList();
+
+    if (files.includes(file)){
+      const definition = await loadTripDefinition(file, files);
+      populateTripSelect(files, file);
+      setTrip(file, definition);
+      el('menu').classList.remove('open');
+      alert(`"${definition.name}" already exists — switched to it.`);
+      return;
+    }
+
+    let center = [20, 0], zoom = 4, bounds = null;
+    try {
+      const res = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(trimmed));
+      const results = await res.json();
+      if (results.length){
+        const r = results[0];
+        center = [parseFloat(r.lat), parseFloat(r.lon)];
+        zoom = zoomForPlaceRank(r.place_rank);
+        if (Array.isArray(r.boundingbox) && r.boundingbox.length === 4){
+          const [south, north, west, east] = r.boundingbox.map(parseFloat);
+          const candidateBounds = [[south, west], [north, east]];
+          // Some administrative boundaries (e.g. Tokyo prefecture's outlying islands) report a
+          // bounding box far larger than the place "feels" like - ignore it when it's an outlier
+          // for this rank of place, and fall back to the place_rank-based center+zoom instead.
+          if (boundsSpanReasonable(candidateBounds, r.place_rank)) bounds = candidateBounds;
+        }
+      }
+    } catch (err) { /* fall back to default center/zoom */ }
+
+    const definition = { name: trimmed, dates: '', center, zoom, bounds, suggestions: {} };
+    localStorage.setItem('tripmap:shell:' + file, JSON.stringify(definition));
+    const localTrips = JSON.parse(localStorage.getItem(LOCAL_TRIPS_KEY) || '[]');
+    if (!localTrips.includes(file)){ localTrips.push(file); localStorage.setItem(LOCAL_TRIPS_KEY, JSON.stringify(localTrips)); }
     const allFiles = files.includes(file) ? files : [...files, file];
     populateTripSelect(allFiles, file);
-    setTrip(file, data);
+    setTrip(file, definition);
     el('menu').classList.remove('open');
   });
 
@@ -876,7 +956,17 @@ async function boot(){
       try {
         const data = JSON.parse(reader.result);
         setTrip(currentTripFile, data);
-        saveTrip();
+        if (Array.isArray(data.places)){
+          currentTrip.places = data.places;
+          migratePlaces(currentTrip.places);
+          saveTrip();
+          renderMarkers();
+        }
+        if (Array.isArray(data.visibleCategories) && data.visibleCategories.length){
+          currentTrip.visibleCategories = data.visibleCategories;
+          saveVisibleCategories(currentTripFile, currentTrip.visibleCategories);
+        }
+        renderHome();
         el('menu').classList.remove('open');
       } catch (err) {
         alert('Could not read that file: ' + err.message);
