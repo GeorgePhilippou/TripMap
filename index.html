@@ -232,8 +232,11 @@
   #menu-box select{ width:100%; background:var(--surface2); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:10px; font-size:14px; font-family:inherit; }
 
   .leaflet-div-icon{ background:transparent; border:none; }
-  .pin{ width:18px; height:18px; border-radius:50% 50% 50% 0; transform:rotate(-45deg);
-    border:2px solid rgba(0,0,0,.4); box-shadow:0 1px 3px rgba(0,0,0,.5); }
+  .pin{ width:28px; height:28px; border-radius:50% 50% 50% 0; transform:rotate(-45deg);
+    border:2px solid rgba(0,0,0,.4); box-shadow:0 1px 3px rgba(0,0,0,.5);
+    display:flex; align-items:center; justify-content:center; }
+  .pin-icon{ transform:rotate(45deg); color:var(--accent-ink); display:flex; }
+  .pin-icon svg{ width:14px; height:14px; }
   input[type=file]{ display:none; }
 
   /* ---- map marker popup ---- */
@@ -395,7 +398,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const APP_VERSION = '1.11.0';
+const APP_VERSION = '1.12.0';
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
@@ -650,7 +653,14 @@ async function runSearch(query){
 }
 function pinIcon(cat){
   const color = getComputedStyle(document.documentElement).getPropertyValue('--' + cat).trim() || '#A39E97';
-  return L.divIcon({ className:'leaflet-div-icon', html:`<div class="pin" style="background:${color}"></div>`, iconSize:[18,18], iconAnchor:[9,16] });
+  const catObj = CAT_BY_KEY[cat];
+  const iconSvg = catObj ? catObj.icon : '';
+  return L.divIcon({
+    className: 'leaflet-div-icon',
+    html: `<div class="pin" style="background:${color}"><div class="pin-icon">${iconSvg}</div></div>`,
+    iconSize: [28, 28],
+    iconAnchor: [14, 26]
+  });
 }
 function renderMapLegend(){
   el('mapLegendList').innerHTML = CATEGORIES.map(c => `
