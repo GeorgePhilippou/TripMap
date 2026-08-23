@@ -38,11 +38,11 @@
 
   /* ---- top bar (shared) ---- */
   .topbar{ display:flex; align-items:center; justify-content:flex-end; padding:calc(10px + env(safe-area-inset-top)) 18px 0; flex-shrink:0; }
-  .topbar button.icon-btn{
-    background:none; border:1px solid var(--border); color:var(--text); border-radius:10px;
+  .icon-btn{
+    background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:10px;
     width:34px; height:34px; font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center;
   }
-  .topbar button.icon-btn:hover{ border-color:var(--accent); }
+  .icon-btn:hover{ border-color:var(--accent); }
 
   /* ---- home screen ---- */
   .screen{ display:none; flex-direction:column; flex:1; min-height:0; overflow-y:auto; padding-bottom:16px; }
@@ -110,7 +110,10 @@
   #mapWrap{ flex:1; position:relative; min-height:0; display:flex; flex-direction:column; }
   #map{ flex:1; }
   .map-topbar{ position:absolute; top:calc(14px + env(safe-area-inset-top)); left:14px; right:14px; z-index:500; display:flex; justify-content:space-between; }
-  .map-topbar button.icon-btn{ background:var(--overlay); backdrop-filter:blur(6px); }
+  .map-topbar .icon-btn{
+    background:var(--accent); color:var(--accent-ink); border:none;
+    box-shadow:0 2px 8px rgba(0,0,0,.18);
+  }
   .search-wrap{ position:absolute; top:calc(60px + env(safe-area-inset-top)); left:14px; right:14px; z-index:500; }
   .search-wrap input{
     width:100%; background:var(--overlay); backdrop-filter:blur(6px); color:var(--text);
@@ -440,6 +443,8 @@ function startPlacing(){
   el('placeConfirmBar').classList.add('show');
   el('mapAddBtn').style.display = 'none';
   el('search').closest('.search-wrap').style.display = 'none';
+  const zoomCtrl = document.querySelector('#map .leaflet-control-zoom');
+  if (zoomCtrl) zoomCtrl.style.display = 'none';
 }
 function stopPlacing(){
   placing = false;
@@ -447,6 +452,8 @@ function stopPlacing(){
   el('placeConfirmBar').classList.remove('show');
   el('mapAddBtn').style.display = 'flex';
   el('search').closest('.search-wrap').style.display = 'block';
+  const zoomCtrl = document.querySelector('#map .leaflet-control-zoom');
+  if (zoomCtrl) zoomCtrl.style.display = '';
 }
 function pinIcon(cat){
   const color = getComputedStyle(document.documentElement).getPropertyValue('--' + cat).trim() || '#A39E97';
