@@ -17,10 +17,10 @@
     --sight:#4F6B44;      --sight-soft:#DCE4CC;
     --food:#8A6A28;       --food-soft:#F0E3BE;
     --beach:#396F6C;      --beach-soft:#D3E6E3;
-    --historical:#8A6A3E; --historical-soft:#EFE6D0;
+    --historical:#7D5A3C; --historical-soft:#EAE0D0;
     --fruit:#B25A34;      --fruit-soft:#F5DED0;
     --shops:#8A4F6E;      --shops-soft:#F0DCE8;
-    --general:#6E7260;    --general-soft:#E7E3D2;
+    --general:#5C6470;    --general-soft:#E1E3E6;
     --activity:#6E7A2E;   --activity-soft:#E7EAC9;
     --stays:#93544A;      --stays-soft:#F0DAD3;
     --airport:#4A5E8A;    --airport-soft:#DBE2F0;
@@ -114,7 +114,8 @@
 
   .suggest-label{ font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; padding:18px 18px 6px; }
   .suggest-row{ display:flex; align-items:center; gap:10px; padding:10px 18px; border-bottom:1px solid var(--border); }
-  .suggest-name{ flex:1; font-size:14px; }
+  .suggest-dot{ width:9px; height:9px; border-radius:50%; border:1.5px solid var(--border); flex-shrink:0; }
+  .suggest-name{ flex:1; font-size:15px; }
   .suggest-actions{ display:flex; gap:6px; flex-shrink:0; }
   .suggest-btn{
     width:30px; height:30px; border-radius:8px; border:1px solid var(--border); background:var(--surface2);
@@ -130,8 +131,11 @@
   .settings-label{ flex:1; font-size:14px; }
   .toggle{ width:40px; height:24px; border-radius:12px; background:var(--surface2); border:1px solid var(--border); position:relative; cursor:pointer; flex-shrink:0; }
   .toggle.on{ background:var(--accent); border-color:var(--accent); }
-  .toggle-knob{ position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%; background:var(--text); transition:left .15s; }
-  .toggle.on .toggle-knob{ left:18px; background:var(--accent-ink); }
+  .toggle-knob{
+    position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%;
+    background:var(--surface); box-shadow:0 1px 3px rgba(38,42,28,.3); transition:left .15s;
+  }
+  .toggle.on .toggle-knob{ left:18px; }
 
   /* ---- map screen ---- */
   #screen-map{ padding-bottom:0; }
@@ -398,7 +402,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const APP_VERSION = '1.12.0';
+const APP_VERSION = '1.13.0';
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
@@ -447,6 +451,11 @@ let activeCategory = null, pendingPhoto = null, placing = false;
 const el = id => document.getElementById(id);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
 const escapeHtml = s => (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function cssVar(name, fallbackName){
+  const root = getComputedStyle(document.documentElement);
+  return root.getPropertyValue(name).trim() || root.getPropertyValue(fallbackName).trim();
+}
+const categoryColor = cat => cssVar('--' + cat, '--muted');
 
 function loadTripList(){
   return fetch('trips/index.json', { cache: 'no-store' }).then(r => r.json()).catch(() => ['cyprus.json'])
@@ -557,8 +566,8 @@ function updateHeroMap(){
   if (!heroMap) return;
   heroMarkersLayer.clearLayers();
   currentTrip.places.forEach(p => {
-    const color = getComputedStyle(document.documentElement).getPropertyValue('--' + p.category).trim() || '#6E7260';
-    L.circleMarker([p.lat, p.lng], { radius: 5, color: '#FAF8EF', weight: 1.5, fillColor: color, fillOpacity: 1 }).addTo(heroMarkersLayer);
+    const color = categoryColor(p.category);
+    L.circleMarker([p.lat, p.lng], { radius: 5, color: cssVar('--surface', '--surface'), weight: 1.5, fillColor: color, fillOpacity: 1 }).addTo(heroMarkersLayer);
   });
   if (currentTrip.bounds){
     heroMap.fitBounds(currentTrip.bounds, { animate: false, maxZoom: 15, padding: [4, 4] });
@@ -652,7 +661,7 @@ async function runSearch(query){
   renderSearchResults(results);
 }
 function pinIcon(cat){
-  const color = getComputedStyle(document.documentElement).getPropertyValue('--' + cat).trim() || '#A39E97';
+  const color = categoryColor(cat);
   const catObj = CAT_BY_KEY[cat];
   const iconSvg = catObj ? catObj.icon : '';
   return L.divIcon({
@@ -795,6 +804,7 @@ function openCategory(key){
       const row = document.createElement('div');
       row.className = 'suggest-row';
       row.innerHTML = `
+        <span class="suggest-dot"></span>
         <span class="suggest-name">${escapeHtml(s.name)}</span>
         <div class="suggest-actions">
           <button class="suggest-btn been" title="Mark as been">&#10003;</button>
