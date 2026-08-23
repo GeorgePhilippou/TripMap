@@ -5,121 +5,229 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Trip Map</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#0f1115; --panel:#171a21; --panel2:#1f232c; --border:#2a2f3a;
-    --text:#e8eaed; --muted:#9aa3af; --accent:#4da3ff;
-    --sight:#4da3ff; --food:#ff9f43; --beach:#2ed3b7; --hike:#a06cd5; --hotel:#ff6b81; --other:#8a94a6;
+    --bg:#181B15; --surface:#212418; --surface2:#292D1E; --border:#3A3E2C;
+    --text:#ECE6D3; --muted:#9CA089; --accent:#8FA07E; --accent-ink:#12150E;
+    --sight:#B7C4A6; --sight-soft:#2c331f;
+    --food:#D3B87C;  --food-soft:#3a3320;
+    --beach:#8FB3AE; --beach-soft:#213230;
+    --hike:#A8A3C9;  --hike-soft:#282738;
+    --hotel:#C7A088; --hotel-soft:#332821;
+    --other:#9CA089; --other-soft:#292D1E;
+    --overlay:rgba(24,27,21,.8);
+    --danger-bg:#332020; --danger-border:#4a2a2a; --danger-text:#d98787;
+  }
+  :root[data-theme="light"]{
+    --bg:#F3F0E2; --surface:#FAF8EF; --surface2:#EFEBDC; --border:#DBD5C0;
+    --text:#262A1C; --muted:#6E7260; --accent:#5D7350; --accent-ink:#F6F5EA;
+    --sight:#4F6B44; --sight-soft:#DCE4CC;
+    --food:#8A6A28;  --food-soft:#F0E3BE;
+    --beach:#396F6C; --beach-soft:#D3E6E3;
+    --hike:#65588F;  --hike-soft:#E1DCF0;
+    --hotel:#93544A; --hotel-soft:#F0DAD3;
+    --other:#6E7260; --other-soft:#E7E3D2;
+    --overlay:rgba(250,248,239,.85);
+    --danger-bg:#F5DEDB; --danger-border:#E0B7B1; --danger-text:#9A3E33;
   }
   *{box-sizing:border-box;}
   html,body{height:100%;margin:0;}
   body{
     background:var(--bg); color:var(--text);
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-    display:flex; flex-direction:column;
+    font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    display:flex; justify-content:center;
   }
-  header{
-    display:flex; align-items:center; gap:10px; padding:10px 14px;
-    background:var(--panel); border-bottom:1px solid var(--border); flex-wrap:wrap;
+  #app{ width:100%; max-width:480px; min-height:100vh; display:flex; flex-direction:column; position:relative;
+    border-left:1px solid var(--border); border-right:1px solid var(--border); }
+
+  /* ---- top bar (shared) ---- */
+  .topbar{ display:flex; align-items:center; justify-content:space-between; padding:14px 18px 0; }
+  .topbar button.icon-btn{
+    background:none; border:1px solid var(--border); color:var(--text); border-radius:10px;
+    width:34px; height:34px; font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center;
   }
-  header h1{ font-size:16px; margin:0; margin-right:8px; white-space:nowrap; }
-  header select, header button, header input[type=text]{
-    background:var(--panel2); color:var(--text); border:1px solid var(--border);
-    border-radius:6px; padding:7px 10px; font-size:13px;
+  .topbar button.icon-btn:hover{ border-color:var(--accent); }
+
+  /* ---- home screen ---- */
+  .screen{ display:none; flex-direction:column; flex:1; padding-bottom:24px; }
+  #screen-home{ padding-bottom:32px; }
+  .screen.active{ display:flex; }
+  .eyebrow{ font-size:12px; color:var(--muted); letter-spacing:.06em; text-transform:uppercase; margin-bottom:6px; }
+  h1.trip-title{ font-family:'Fraunces',serif; font-weight:500; font-size:30px; margin:0 0 4px; letter-spacing:-.01em; }
+  .trip-sub{ color:var(--muted); font-size:13px; }
+  .home-header{ padding:8px 18px 0; }
+
+  .hero{
+    margin:18px 18px 0; border-radius:16px; overflow:hidden; border:1px solid var(--border);
+    position:relative; min-height:96px; background:linear-gradient(160deg,var(--surface2),var(--surface));
+    display:flex; align-items:flex-end; padding:14px; cursor:pointer;
   }
-  header button{ cursor:pointer; }
-  header button:hover{ border-color:var(--accent); }
-  #search{ flex:1; min-width:140px; }
-  #layout{ flex:1; display:flex; min-height:0; }
+  .hero-pill{ background:var(--overlay); border:1px solid var(--border); border-radius:10px; padding:8px 12px; font-size:13px; }
+  .hero-pill b{ font-weight:600; }
+  .hero-pill .count{ color:var(--muted); font-size:11px; }
+  .hero-empty{ color:var(--muted); font-size:13px; }
+
+  .grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:18px 18px 0; }
+  .card{
+    background:var(--surface); border:1px solid var(--border); border-radius:14px;
+    padding:16px; display:flex; flex-direction:column; gap:10px; cursor:pointer;
+  }
+  .card:hover{ border-color:var(--accent); }
+  .cat-icon{ width:34px; height:34px; border-radius:9px; display:flex; align-items:center; justify-content:center; font-size:16px; }
+  .card-title{ font-size:14px; font-weight:600; }
+  .card-count{ font-size:12px; color:var(--muted); }
+  .wide{ grid-column:span 2; flex-direction:row; align-items:center; justify-content:space-between; }
+  .wide .left{ display:flex; align-items:center; gap:12px; }
+  .chev{ color:var(--muted); font-size:18px; }
+
+  .primary-btn{
+    margin:22px 18px 0; background:var(--accent); color:var(--accent-ink); border:none;
+    border-radius:12px; padding:13px; font-weight:600; font-size:14px; font-family:inherit; cursor:pointer;
+  }
+  .primary-btn:hover{ filter:brightness(1.05); }
+
+  /* ---- category / list screen ---- */
+  .cat-header{ display:flex; align-items:center; gap:10px; padding:14px 18px 0; }
+  .cat-header h2{ font-family:'Fraunces',serif; font-weight:500; font-size:22px; margin:0; flex:1; }
+  .place-list{ margin-top:8px; }
+  .place{ padding:14px 18px; border-bottom:1px solid var(--border); cursor:pointer; display:flex; align-items:center; gap:12px; }
+  .place:hover{ background:var(--surface); }
+  .place.visited .place-name{ text-decoration:line-through; color:var(--muted); }
+  .place-dot{ width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+  .place-name{ font-weight:500; font-size:14px; flex:1; }
+  .place-visited-tag{ font-size:11px; color:var(--muted); }
+  .empty-hint{ padding:24px 18px; color:var(--muted); font-size:13px; line-height:1.6; text-align:center; }
+
+  /* ---- map screen ---- */
+  #screen-map{ padding-bottom:0; }
+  #mapWrap{ flex:1; position:relative; min-height:0; display:flex; flex-direction:column; }
   #map{ flex:1; }
-  #sidebar{
-    width:320px; max-width:42vw; background:var(--panel); border-left:1px solid var(--border);
-    overflow-y:auto; display:flex; flex-direction:column;
+  .map-topbar{ position:absolute; top:14px; left:14px; right:14px; z-index:500; display:flex; justify-content:space-between; }
+  .map-topbar button.icon-btn{ background:var(--overlay); backdrop-filter:blur(6px); }
+  .search-wrap{ position:absolute; top:60px; left:14px; right:14px; z-index:500; }
+  .search-wrap input{
+    width:100%; background:var(--overlay); backdrop-filter:blur(6px); color:var(--text);
+    border:1px solid var(--border); border-radius:10px; padding:10px 12px; font-size:13px; font-family:inherit;
   }
-  #sidebar h2{ font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:14px 14px 6px; }
-  .place{
-    padding:10px 14px; border-bottom:1px solid var(--border); cursor:pointer;
-  }
-  .place:hover{ background:var(--panel2); }
-  .place.visited{ opacity:.55; }
-  .place-top{ display:flex; align-items:center; gap:8px; }
-  .dot{ width:10px; height:10px; border-radius:50%; flex-shrink:0; }
-  .place-name{ font-weight:600; font-size:14px; flex:1; }
-  .place-cat{ font-size:11px; color:var(--muted); }
-  .place-notes{ font-size:12px; color:var(--muted); margin-top:4px; white-space:pre-wrap; }
-  .empty-hint{ padding:14px; color:var(--muted); font-size:13px; line-height:1.5; }
-  #editor{
-    position:fixed; inset:0; background:rgba(0,0,0,.5); display:none;
-    align-items:center; justify-content:center; z-index:1000; padding:16px;
-  }
+
+
+  /* ---- editor bottom sheet ---- */
+  #editor{ position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; align-items:flex-end; justify-content:center; z-index:1000; }
   #editor.open{ display:flex; }
   #editor-box{
-    background:var(--panel); border:1px solid var(--border); border-radius:10px;
-    padding:18px; width:100%; max-width:380px; display:flex; flex-direction:column; gap:10px;
+    background:var(--surface); border:1px solid var(--border); border-bottom:none;
+    border-radius:18px 18px 0 0; padding:20px 18px calc(20px + env(safe-area-inset-bottom));
+    width:100%; max-width:480px; display:flex; flex-direction:column; gap:12px;
   }
-  #editor-box h3{ margin:0 0 4px; font-size:15px; }
-  #editor-box label{ font-size:12px; color:var(--muted); }
+  #editor-box h3{ font-family:'Fraunces',serif; font-weight:500; margin:0 0 2px; font-size:19px; }
+  #editor-box label{ font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
   #editor-box input, #editor-box select, #editor-box textarea{
-    width:100%; background:var(--panel2); color:var(--text); border:1px solid var(--border);
-    border-radius:6px; padding:8px; font-size:13px; font-family:inherit;
+    width:100%; background:var(--surface2); color:var(--text); border:1px solid var(--border);
+    border-radius:8px; padding:10px; font-size:14px; font-family:inherit; margin-top:4px;
   }
-  #editor-box textarea{ min-height:70px; resize:vertical; }
-  .editor-row{ display:flex; gap:8px; }
-  .editor-actions{ display:flex; justify-content:space-between; margin-top:6px; gap:8px; }
-  .editor-actions .left button{ background:#3a1f24; border-color:#5a2a30; }
-  .btn-primary{ background:var(--accent) !important; color:#0f1115 !important; border-color:var(--accent) !important; font-weight:600; }
+  #editor-box textarea{ min-height:64px; resize:vertical; }
+  .editor-row{ display:flex; gap:10px; }
+  .editor-row > div{ flex:1; }
+  .editor-actions{ display:flex; justify-content:space-between; margin-top:4px; gap:8px; }
+  button{ font-family:inherit; }
+  .btn{ background:var(--surface2); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:10px 14px; font-size:13px; cursor:pointer; }
+  .btn:hover{ border-color:var(--accent); }
+  .btn-danger{ background:var(--danger-bg); border-color:var(--danger-border); color:var(--danger-text); }
+  .btn-primary{ background:var(--accent); border-color:var(--accent); color:var(--accent-ink); font-weight:600; }
+
+  /* ---- trip menu ---- */
+  #menu{ position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; align-items:flex-start; justify-content:center; z-index:1000; }
+  #menu.open{ display:flex; }
+  #menu-box{
+    background:var(--surface); border:1px solid var(--border); border-radius:14px; margin-top:64px;
+    padding:10px; width:calc(100% - 36px); max-width:440px; display:flex; flex-direction:column; gap:2px;
+  }
+  #menu-box .menu-item{
+    padding:12px 14px; border-radius:8px; cursor:pointer; font-size:14px; display:flex; justify-content:space-between; align-items:center;
+  }
+  #menu-box .menu-item:hover{ background:var(--surface2); }
+  #menu-box .menu-label{ font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; padding:10px 14px 2px; }
+  #menu-box select{ width:100%; background:var(--surface2); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:10px; font-size:14px; font-family:inherit; }
+
   .leaflet-div-icon{ background:transparent; border:none; }
   .pin{ width:18px; height:18px; border-radius:50% 50% 50% 0; transform:rotate(-45deg);
     border:2px solid rgba(0,0,0,.4); box-shadow:0 1px 3px rgba(0,0,0,.5); }
-  @media (max-width:640px){
-    #sidebar{ position:fixed; right:0; top:45px; bottom:0; width:80vw; max-width:80vw; z-index:500;
-      transform:translateX(100%); transition:transform .2s; }
-    #sidebar.open{ transform:translateX(0); }
-  }
+  input[type=file]{ display:none; }
 </style>
 </head>
 <body>
+<div id="app">
 
-<header>
-  <h1>🗺️ Trip Map</h1>
-  <select id="tripSelect"></select>
-  <button id="newTripBtn">New trip</button>
-  <input id="search" type="text" placeholder="Search a place & press Enter…">
-  <button id="exportBtn">Export JSON</button>
-  <button id="importBtn">Import</button>
-  <button id="sidebarToggle" style="display:none;">Places</button>
-  <input id="importFile" type="file" accept="application/json" style="display:none;">
-</header>
+  <!-- HOME -->
+  <section id="screen-home" class="screen active">
+    <div class="topbar">
+      <button class="icon-btn" id="themeBtn">&#9728;</button>
+      <button class="icon-btn" id="menuBtn">&#8942;</button>
+    </div>
+    <div class="home-header">
+      <div class="eyebrow" id="tripDates">Trip</div>
+      <h1 class="trip-title" id="tripName">Trip</h1>
+      <div class="trip-sub" id="tripSummary">0 places saved</div>
+    </div>
 
-<div id="layout">
-  <div id="map"></div>
-  <div id="sidebar">
-    <h2 id="sidebarTitle">Places</h2>
-    <div id="placeList"></div>
-  </div>
+    <div class="hero" id="heroCard">
+      <div class="hero-pill" id="heroPill"><span class="hero-empty">No places yet — tap the map to start</span></div>
+    </div>
+
+    <div class="grid" id="categoryGrid"></div>
+
+    <button class="primary-btn" id="viewMapBtn">View full map</button>
+  </section>
+
+  <!-- CATEGORY LIST -->
+  <section id="screen-category" class="screen">
+    <div class="cat-header">
+      <button class="icon-btn" id="catBackBtn">&#8592;</button>
+      <h2 id="catTitle">Category</h2>
+    </div>
+    <div class="place-list" id="catList"></div>
+  </section>
+
+  <!-- FULL MAP -->
+  <section id="screen-map" class="screen">
+    <div id="mapWrap">
+      <div class="map-topbar">
+        <button class="icon-btn" id="mapBackBtn">&#8592;</button>
+        <button class="icon-btn" id="mapAddBtn">+</button>
+      </div>
+      <div class="search-wrap">
+        <input id="search" type="text" placeholder="Search a place & press Enter…">
+      </div>
+      <div id="map"></div>
+    </div>
+  </section>
+
 </div>
 
+<!-- EDITOR -->
 <div id="editor">
   <div id="editor-box">
-    <h3 id="editorHeading">Edit place</h3>
+    <h3 id="editorHeading">New place</h3>
     <div>
       <label>Name</label>
       <input id="f-name" type="text" placeholder="e.g. Nissi Beach">
     </div>
     <div class="editor-row">
-      <div style="flex:1">
+      <div>
         <label>Category</label>
         <select id="f-cat">
           <option value="sight">Sight</option>
-          <option value="food">Food</option>
+          <option value="food">Food &amp; Drink</option>
           <option value="beach">Beach</option>
           <option value="hike">Hike</option>
-          <option value="hotel">Hotel</option>
-          <option value="other">Other</option>
+          <option value="hotel">Stay</option>
+          <option value="other">General</option>
         </select>
       </div>
-      <div style="flex:1">
-        <label>Visited</label>
+      <div>
+        <label>Status</label>
         <select id="f-visited">
           <option value="0">Not yet</option>
           <option value="1">Been</option>
@@ -131,63 +239,93 @@
       <textarea id="f-notes" placeholder="Opening hours, why you want to go, tips…"></textarea>
     </div>
     <div class="editor-actions">
-      <div class="left"><button id="deleteBtn">Delete</button></div>
+      <button class="btn btn-danger" id="deleteBtn">Delete</button>
       <div style="display:flex;gap:8px;">
-        <button id="cancelBtn">Cancel</button>
-        <button id="saveBtn" class="btn-primary">Save</button>
+        <button class="btn" id="cancelBtn">Cancel</button>
+        <button class="btn btn-primary" id="saveBtn">Save</button>
       </div>
     </div>
   </div>
 </div>
 
+<!-- TRIP MENU -->
+<div id="menu">
+  <div id="menu-box">
+    <div class="menu-label">Trip</div>
+    <div style="padding:0 14px 10px;"><select id="tripSelect"></select></div>
+    <div class="menu-item" id="newTripItem"><span>New trip</span><span>+</span></div>
+    <div class="menu-label">Data</div>
+    <div class="menu-item" id="exportItem"><span>Export JSON</span><span>&#8595;</span></div>
+    <div class="menu-item" id="importItem"><span>Import JSON</span><span>&#8593;</span></div>
+    <input id="importFile" type="file" accept="application/json">
+  </div>
+</div>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-const CATEGORY_COLORS = {
-  sight:'#4da3ff', food:'#ff9f43', beach:'#2ed3b7', hike:'#a06cd5', hotel:'#ff6b81', other:'#8a94a6'
-};
+const CATEGORIES = [
+  { key:'sight', label:'Sights',       icon:'&#9678;' },
+  { key:'food',  label:'Food & Drink', icon:'&#10022;' },
+  { key:'beach', label:'Beaches',      icon:'&#8776;' },
+  { key:'hike',  label:'Hikes',        icon:'&#9650;' },
+  { key:'hotel', label:'Stay',         icon:'&#8962;' },
+  { key:'other', label:'General',      icon:'&#9633;' },
+];
+const CAT_BY_KEY = Object.fromEntries(CATEGORIES.map(c => [c.key, c]));
 const STORAGE_PREFIX = 'tripmap:';
 
 let map, markers = {}, currentTrip = null, currentTripFile = null, editingId = null, pendingLatLng = null;
+let activeCategory = null;
 
 const el = id => document.getElementById(id);
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+const storageKey = file => STORAGE_PREFIX + file;
+const escapeHtml = s => (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
-
-function storageKey(file){ return STORAGE_PREFIX + file; }
+const THEME_KEY = 'tripmap:theme';
+function applyTheme(theme){
+  document.documentElement.setAttribute('data-theme', theme);
+  el('themeBtn').innerHTML = theme === 'light' ? '&#9728;' : '&#9789;';
+  localStorage.setItem(THEME_KEY, theme);
+  if (map && currentTrip) renderMarkers();
+}
+function toggleTheme(){
+  const current = document.documentElement.getAttribute('data-theme') || 'dark';
+  applyTheme(current === 'light' ? 'dark' : 'light');
+}
 
 function loadTripList(){
   return fetch('trips/index.json').then(r => r.json()).catch(() => ['cyprus.json']);
 }
-
 function loadTrip(file){
   const saved = localStorage.getItem(storageKey(file));
   if (saved) return Promise.resolve(JSON.parse(saved));
   return fetch('trips/' + file).then(r => r.json());
 }
-
 function saveTrip(){
   localStorage.setItem(storageKey(currentTripFile), JSON.stringify(currentTrip));
 }
 
+function showScreen(id){
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  el(id).classList.add('active');
+  if (id === 'screen-map') setTimeout(() => map.invalidateSize(), 50);
+}
+
+/* ---- map ---- */
 function initMap(){
-  map = L.map('map', { zoomControl: true });
+  map = L.map('map', { zoomControl: false });
+  L.control.zoom({ position: 'bottomright' }).addTo(map);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '&copy; OpenStreetMap contributors'
   }).addTo(map);
   map.on('click', e => openEditor(null, e.latlng));
 }
-
 function pinIcon(cat){
-  const color = CATEGORY_COLORS[cat] || CATEGORY_COLORS.other;
-  return L.divIcon({
-    className: 'leaflet-div-icon',
-    html: `<div class="pin" style="background:${color}"></div>`,
-    iconSize: [18,18],
-    iconAnchor: [9,16]
-  });
+  const color = getComputedStyle(document.documentElement).getPropertyValue('--' + cat).trim() || '#A39E97';
+  return L.divIcon({ className:'leaflet-div-icon', html:`<div class="pin" style="background:${color}"></div>`, iconSize:[18,18], iconAnchor:[9,16] });
 }
-
 function renderMarkers(){
   Object.values(markers).forEach(m => map.removeLayer(m));
   markers = {};
@@ -199,47 +337,87 @@ function renderMarkers(){
   });
 }
 
-function renderList(){
-  el('sidebarTitle').textContent = `Places (${currentTrip.places.length})`;
-  const list = el('placeList');
-  if (!currentTrip.places.length){
-    list.innerHTML = `<div class="empty-hint">No places yet. Click anywhere on the map, or search above, to drop a pin.</div>`;
-    return;
+/* ---- home ---- */
+function renderHome(){
+  el('tripName').textContent = currentTrip.name || 'Trip';
+  el('tripDates').textContent = currentTrip.dates || 'Trip';
+  const total = currentTrip.places.length;
+  const visited = currentTrip.places.filter(p => p.visited).length;
+  el('tripSummary').textContent = total
+    ? `${total} place${total===1?'':'s'} saved · ${visited} visited`
+    : 'No places yet';
+
+  const next = currentTrip.places.find(p => !p.visited);
+  if (next){
+    el('heroPill').innerHTML = `<b>${escapeHtml(next.name)}</b><div class="count">Next up</div>`;
+  } else {
+    el('heroPill').innerHTML = total
+      ? `<span class="hero-empty">All caught up — everything visited</span>`
+      : `<span class="hero-empty">No places yet — tap the map to start</span>`;
   }
-  list.innerHTML = '';
-  currentTrip.places.forEach(p => {
-    const div = document.createElement('div');
-    div.className = 'place' + (p.visited ? ' visited' : '');
-    div.innerHTML = `
-      <div class="place-top">
-        <span class="dot" style="background:${CATEGORY_COLORS[p.category]||CATEGORY_COLORS.other}"></span>
-        <span class="place-name">${escapeHtml(p.name)}</span>
-        <span class="place-cat">${p.category}</span>
-      </div>
-      ${p.notes ? `<div class="place-notes">${escapeHtml(p.notes)}</div>` : ''}
-    `;
-    div.addEventListener('click', () => {
-      map.flyTo([p.lat, p.lng], Math.max(map.getZoom(), 13));
-      markers[p.id].openPopup();
-      openEditor(p.id);
-    });
-    list.appendChild(div);
+
+  const grid = el('categoryGrid');
+  grid.innerHTML = '';
+  CATEGORIES.forEach((c, i) => {
+    const count = currentTrip.places.filter(p => p.category === c.key).length;
+    const card = document.createElement('div');
+    card.className = 'card' + (i === CATEGORIES.length - 1 ? ' wide' : '');
+    if (i === CATEGORIES.length - 1){
+      card.innerHTML = `
+        <div class="left">
+          <div class="cat-icon" style="background:var(--${c.key}-soft);color:var(--${c.key})">${c.icon}</div>
+          <div>
+            <div class="card-title">${c.label}</div>
+            <div class="card-count">${count} place${count===1?'':'s'}</div>
+          </div>
+        </div>
+        <span class="chev">&#8250;</span>`;
+    } else {
+      card.innerHTML = `
+        <div class="cat-icon" style="background:var(--${c.key}-soft);color:var(--${c.key})">${c.icon}</div>
+        <div class="card-title">${c.label}</div>
+        <div class="card-count">${count} place${count===1?'':'s'}</div>`;
+    }
+    card.addEventListener('click', () => openCategory(c.key));
+    grid.appendChild(card);
   });
 }
 
-function escapeHtml(s){
-  return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+/* ---- category list ---- */
+function openCategory(key){
+  activeCategory = key;
+  const cat = CAT_BY_KEY[key];
+  el('catTitle').textContent = cat.label;
+  const places = currentTrip.places.filter(p => p.category === key);
+  const list = el('catList');
+  if (!places.length){
+    list.innerHTML = `<div class="empty-hint">No ${cat.label.toLowerCase()} yet. Add one from the map.</div>`;
+  } else {
+    list.innerHTML = '';
+    places.forEach(p => {
+      const div = document.createElement('div');
+      div.className = 'place' + (p.visited ? ' visited' : '');
+      div.innerHTML = `
+        <span class="place-dot" style="background:var(--${p.category})"></span>
+        <span class="place-name">${escapeHtml(p.name)}</span>
+        ${p.visited ? '<span class="place-visited-tag">Been</span>' : ''}`;
+      div.addEventListener('click', () => openEditor(p.id));
+      list.appendChild(div);
+    });
+  }
+  showScreen('screen-category');
 }
 
+/* ---- editor ---- */
 function openEditor(id, latlng){
   editingId = id;
   pendingLatLng = latlng || null;
   const isNew = !id;
   el('editorHeading').textContent = isNew ? 'New place' : 'Edit place';
-  el('deleteBtn').style.display = isNew ? 'none' : 'inline-block';
+  el('deleteBtn').style.visibility = isNew ? 'hidden' : 'visible';
   if (isNew){
     el('f-name').value = '';
-    el('f-cat').value = 'sight';
+    el('f-cat').value = activeCategory || 'sight';
     el('f-visited').value = '0';
     el('f-notes').value = '';
   } else {
@@ -252,13 +430,11 @@ function openEditor(id, latlng){
   el('editor').classList.add('open');
   setTimeout(() => el('f-name').focus(), 50);
 }
-
 function closeEditor(){
   el('editor').classList.remove('open');
   editingId = null;
   pendingLatLng = null;
 }
-
 function saveEditor(){
   const name = el('f-name').value.trim();
   if (!name){ el('f-name').focus(); return; }
@@ -275,26 +451,27 @@ function saveEditor(){
   }
   saveTrip();
   renderMarkers();
-  renderList();
+  renderHome();
+  if (activeCategory) openCategory(activeCategory);
   closeEditor();
 }
-
 function deletePlace(){
   currentTrip.places = currentTrip.places.filter(p => p.id !== editingId);
   saveTrip();
   renderMarkers();
-  renderList();
+  renderHome();
+  if (activeCategory) openCategory(activeCategory);
   closeEditor();
 }
 
+/* ---- trips ---- */
 function setTrip(file, data){
   currentTripFile = file;
   currentTrip = data;
   map.setView(data.center || [20,0], data.zoom || 4);
   renderMarkers();
-  renderList();
+  renderHome();
 }
-
 function populateTripSelect(files, activeFile){
   const sel = el('tripSelect');
   sel.innerHTML = '';
@@ -315,29 +492,42 @@ async function boot(){
   populateTripSelect(files, startFile);
   setTrip(startFile, data);
 
+  el('viewMapBtn').addEventListener('click', () => showScreen('screen-map'));
+  el('mapBackBtn').addEventListener('click', () => showScreen('screen-home'));
+  el('mapAddBtn').addEventListener('click', () => openEditor(null, map.getCenter()));
+  el('catBackBtn').addEventListener('click', () => { activeCategory = null; showScreen('screen-home'); });
+  el('heroCard').addEventListener('click', () => showScreen('screen-map'));
+
+  el('menuBtn').addEventListener('click', () => el('menu').classList.add('open'));
+  el('themeBtn').addEventListener('click', toggleTheme);
+  el('menu').addEventListener('click', e => { if (e.target.id === 'menu') el('menu').classList.remove('open'); });
+
   el('tripSelect').addEventListener('change', async e => {
     const file = e.target.value;
     const data = await loadTrip(file);
     setTrip(file, data);
+    el('menu').classList.remove('open');
   });
 
-  el('newTripBtn').addEventListener('click', async () => {
+  el('newTripItem').addEventListener('click', async () => {
     const name = prompt('Trip name?');
     if (!name) return;
     const file = name.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '.json';
-    const data = { name, center: [20,0], zoom: 4, places: [] };
+    const data = { name, dates:'', center: [20,0], zoom: 4, places: [] };
     localStorage.setItem(storageKey(file), JSON.stringify(data));
     const files = await loadTripList();
     const allFiles = files.includes(file) ? files : [...files, file];
     populateTripSelect(allFiles, file);
     setTrip(file, data);
+    el('menu').classList.remove('open');
   });
 
   el('saveBtn').addEventListener('click', saveEditor);
   el('cancelBtn').addEventListener('click', closeEditor);
   el('deleteBtn').addEventListener('click', deletePlace);
+  el('editor').addEventListener('click', e => { if (e.target.id === 'editor') closeEditor(); });
 
-  el('exportBtn').addEventListener('click', () => {
+  el('exportItem').addEventListener('click', () => {
     const blob = new Blob([JSON.stringify(currentTrip, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -347,7 +537,7 @@ async function boot(){
     URL.revokeObjectURL(url);
   });
 
-  el('importBtn').addEventListener('click', () => el('importFile').click());
+  el('importItem').addEventListener('click', () => el('importFile').click());
   el('importFile').addEventListener('change', e => {
     const file = e.target.files[0];
     if (!file) return;
@@ -357,6 +547,7 @@ async function boot(){
         const data = JSON.parse(reader.result);
         setTrip(currentTripFile, data);
         saveTrip();
+        el('menu').classList.remove('open');
       } catch (err) {
         alert('Could not read that file: ' + err.message);
       }
@@ -377,12 +568,9 @@ async function boot(){
     openEditor(null, { lat: parseFloat(lat), lng: parseFloat(lon) });
     el('f-name').value = display_name.split(',')[0];
   });
-
-  document.getElementById('editor').addEventListener('click', e => {
-    if (e.target.id === 'editor') closeEditor();
-  });
 }
 
+applyTheme(localStorage.getItem(THEME_KEY) || 'dark');
 boot();
 </script>
 </body>
