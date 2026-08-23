@@ -144,6 +144,18 @@
     width:100%; background:var(--overlay); backdrop-filter:blur(6px); color:var(--text);
     border:1px solid var(--border); border-radius:10px; padding:10px 12px; font-size:13px; font-family:inherit;
   }
+  .search-results{
+    margin-top:6px; background:var(--overlay); backdrop-filter:blur(6px); border:1px solid var(--border);
+    border-radius:10px; overflow:hidden; display:none; max-height:240px; overflow-y:auto;
+  }
+  .search-results.show{ display:block; }
+  .search-result-row{ padding:10px 12px; font-size:13px; cursor:pointer; border-bottom:1px solid var(--border); }
+  .search-result-row:last-child{ border-bottom:none; }
+  .search-result-row:hover{ background:var(--surface2); }
+  .search-pin{
+    width:15px; height:15px; border-radius:50%; background:var(--accent);
+    border:2px solid var(--accent-ink); box-shadow:0 1px 4px rgba(0,0,0,.35);
+  }
   .pin-crosshair{
     position:absolute; top:50%; left:50%; margin-left:-14px; margin-top:-32px; z-index:600;
     display:none; pointer-events:none;
@@ -264,7 +276,8 @@
         <button class="icon-btn" id="mapAddBtn">+</button>
       </div>
       <div class="search-wrap">
-        <input id="search" type="text" placeholder="Search a place & press Enter…">
+        <input id="search" type="text" placeholder="Search a place & press Enter…" autocomplete="off">
+        <div id="searchResults" class="search-results"></div>
       </div>
       <div id="pinCrosshair" class="pin-crosshair"><div class="pin-crosshair-icon"></div></div>
       <div id="placeConfirmBar" class="place-confirm-bar">
@@ -351,7 +364,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const APP_VERSION = '1.7.0';
+const APP_VERSION = '1.8.0';
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
@@ -394,6 +407,7 @@ const CATEGORY_MIGRATIONS = { hotel:'stays', other:'general' };
 
 let map, markers = {}, currentTrip = null, currentTripFile = null, editingId = null, pendingLatLng = null;
 let heroMap, heroMarkersLayer;
+let searchMarkers = [], lastSearchResults = [], lastSearchQuery = '', searchDebounceTimer = null;
 let activeCategory = null, pendingPhoto = null, placing = false;
 
 const el = id => document.getElementById(id);
@@ -537,6 +551,64 @@ function stopPlacing(){
   el('search').closest('.search-wrap').style.display = 'block';
   const zoomCtrl = document.querySelector('#map .leaflet-control-zoom');
   if (zoomCtrl) zoomCtrl.style.display = '';
+}
+
+function getTripViewbox(){
+  // Use whatever the map is currently showing (padded generously) rather than a
+  // hand-derived degree-per-zoom estimate - Leaflet already knows the real visible
+  // extent for the container's actual size, which a manual formula can't reliably match.
+  const b = map.getBounds().pad(0.6);
+  return [b.getWest(), b.getNorth(), b.getEast(), b.getSouth()];
+}
+function searchPinIcon(){
+  return L.divIcon({ className: 'leaflet-div-icon', html: `<div class="search-pin"></div>`, iconSize: [15, 15], iconAnchor: [8, 8] });
+}
+function clearSearchMarkers(){
+  searchMarkers.forEach(m => map.removeLayer(m));
+  searchMarkers = [];
+}
+function clearSearchResults(){
+  clearSearchMarkers();
+  lastSearchResults = [];
+  el('searchResults').classList.remove('show');
+  el('searchResults').innerHTML = '';
+}
+function selectSearchResult(r){
+  clearSearchResults();
+  el('search').value = '';
+  const lat = parseFloat(r.lat), lon = parseFloat(r.lon);
+  map.flyTo([lat, lon], 16);
+  openEditor(null, { lat, lng: lon });
+  el('f-name').value = r.display_name.split(',')[0];
+}
+function renderSearchResults(results){
+  clearSearchMarkers();
+  const box = el('searchResults');
+  if (!results.length){ box.classList.remove('show'); box.innerHTML = ''; return; }
+  box.innerHTML = '';
+  results.forEach(r => {
+    const row = document.createElement('div');
+    row.className = 'search-result-row';
+    row.textContent = r.display_name.split(',').slice(0, 3).join(',');
+    row.addEventListener('click', () => selectSearchResult(r));
+    box.appendChild(row);
+
+    const marker = L.marker([parseFloat(r.lat), parseFloat(r.lon)], { icon: searchPinIcon() }).addTo(map);
+    marker.on('click', () => selectSearchResult(r));
+    searchMarkers.push(marker);
+  });
+  box.classList.add('show');
+}
+async function runSearch(query){
+  lastSearchQuery = query;
+  if (!query || query.length < 2){ clearSearchResults(); return; }
+  const [west, north, east, south] = getTripViewbox();
+  const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=6'
+    + '&viewbox=' + [west, north, east, south].join(',') + '&bounded=1&q=' + encodeURIComponent(query);
+  let results = [];
+  try { results = await (await fetch(url)).json(); } catch (err) { results = []; }
+  lastSearchResults = results;
+  renderSearchResults(results);
 }
 function pinIcon(cat){
   const color = getComputedStyle(document.documentElement).getPropertyValue('--' + cat).trim() || '#A39E97';
@@ -764,6 +836,8 @@ function deletePlace(){
 /* ---- trips ---- */
 function setTrip(file, definition){
   if (fbRef) { fbRef.off(); fbRef = null; }
+  clearSearchResults();
+  el('search').value = '';
   currentTripFile = file;
   currentTrip = {
     name: definition.name,
@@ -830,7 +904,7 @@ async function boot(){
   setTrip(startFile, definition);
 
   el('viewMapBtn').addEventListener('click', () => showScreen('screen-map'));
-  el('mapBackBtn').addEventListener('click', () => { stopPlacing(); showScreen('screen-home'); });
+  el('mapBackBtn').addEventListener('click', () => { stopPlacing(); clearSearchResults(); el('search').value = ''; showScreen('screen-home'); });
   el('mapAddBtn').addEventListener('click', startPlacing);
   el('placeCancelBtn').addEventListener('click', stopPlacing);
   el('placeConfirmBtn').addEventListener('click', () => {
@@ -976,17 +1050,24 @@ async function boot(){
     e.target.value = '';
   });
 
+  el('search').addEventListener('input', e => {
+    clearTimeout(searchDebounceTimer);
+    const q = e.target.value.trim();
+    searchDebounceTimer = setTimeout(() => runSearch(q), 350);
+  });
   el('search').addEventListener('keydown', async e => {
     if (e.key !== 'Enter') return;
+    e.preventDefault();
+    clearTimeout(searchDebounceTimer);
     const q = e.target.value.trim();
     if (!q) return;
-    const res = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q));
-    const results = await res.json();
-    if (!results.length){ alert('No results for "' + q + '"'); return; }
-    const { lat, lon, display_name } = results[0];
-    map.flyTo([lat, lon], 14);
-    openEditor(null, { lat: parseFloat(lat), lng: parseFloat(lon) });
-    el('f-name').value = display_name.split(',')[0];
+    if (lastSearchQuery === q && lastSearchResults.length){
+      selectSearchResult(lastSearchResults[0]);
+      return;
+    }
+    await runSearch(q);
+    if (lastSearchResults.length) selectSearchResult(lastSearchResults[0]);
+    else alert('No results for "' + q + '"');
   });
 }
 
