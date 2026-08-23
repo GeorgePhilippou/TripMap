@@ -210,6 +210,7 @@
     padding:12px 14px; border-radius:8px; cursor:pointer; font-size:14px; display:flex; justify-content:space-between; align-items:center;
   }
   #menu-box .menu-item:hover{ background:var(--surface2); }
+  #roomStatus{ font-size:12px; color:var(--muted); max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   #menu-box .menu-label{ font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; padding:10px 14px 2px; }
   #menu-box select{ width:100%; background:var(--surface2); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:10px; font-size:14px; font-family:inherit; }
 
@@ -335,6 +336,8 @@
     <div style="padding:0 14px 10px;"><select id="tripSelect"></select></div>
     <div class="menu-item" id="newTripItem"><span>New trip</span><span>+</span></div>
     <div class="menu-item" id="catSettingsItem"><span>Homepage categories</span><span>&#8250;</span></div>
+    <div class="menu-label">Sharing</div>
+    <div class="menu-item" id="roomItem"><span>Sync room</span><span id="roomStatus">&#8250;</span></div>
     <div class="menu-label">Data</div>
     <div class="menu-item" id="exportItem"><span>Export JSON</span><span>&#8595;</span></div>
     <div class="menu-item" id="importItem"><span>Import JSON</span><span>&#8593;</span></div>
@@ -343,8 +346,28 @@
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.5.0';
+
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
+  authDomain: "tripmap-48cc1.firebaseapp.com",
+  databaseURL: "https://tripmap-48cc1-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "tripmap-48cc1",
+  storageBucket: "tripmap-48cc1.firebasestorage.app",
+  messagingSenderId: "313288649936",
+  appId: "1:313288649936:web:af6c708ab7765372c182d5"
+};
+const DEFAULT_ROOM = 'philippou-megan-8x4q';
+const ROOM_KEY = 'tripmap:room';
+let fbApp, fbDb, fbRef;
+try {
+  fbApp = firebase.initializeApp(FIREBASE_CONFIG);
+  fbDb = firebase.database();
+} catch (e) { console.error('Firebase init failed', e); }
+function getRoom(){ return localStorage.getItem(ROOM_KEY) || DEFAULT_ROOM; }
 
 function svgIcon(paths){
   return `<svg viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
@@ -384,8 +407,15 @@ function loadTrip(file){
   if (saved) return Promise.resolve(JSON.parse(saved));
   return fetch('trips/' + file).then(r => r.json());
 }
+function tripKey(file){ return (file || '').replace(/\.json$/, ''); }
 function saveTrip(){
   localStorage.setItem(storageKey(currentTripFile), JSON.stringify(currentTrip));
+  if (fbDb){
+    fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(currentTripFile)).set({
+      places: currentTrip.places,
+      visibleCategories: currentTrip.visibleCategories
+    });
+  }
 }
 function migrateTrip(trip){
   let changed = false;
@@ -703,12 +733,35 @@ function deletePlace(){
 
 /* ---- trips ---- */
 function setTrip(file, data){
+  if (fbRef) { fbRef.off(); fbRef = null; }
   currentTripFile = file;
   currentTrip = data;
-  if (migrateTrip(currentTrip)) saveTrip();
+  migrateTrip(currentTrip);
   map.setView(data.center || [20,0], data.zoom || 4);
   renderMarkers();
   renderHome();
+
+  if (fbDb){
+    fbRef = fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(file));
+    fbRef.on('value', snap => {
+      if (file !== currentTripFile) return;
+      const remote = snap.val();
+      if (remote){
+        currentTrip.places = Array.isArray(remote.places) ? remote.places : [];
+        currentTrip.visibleCategories = (Array.isArray(remote.visibleCategories) && remote.visibleCategories.length)
+          ? remote.visibleCategories : DEFAULT_VISIBLE_CATEGORIES.slice();
+        migrateTrip(currentTrip);
+        localStorage.setItem(storageKey(currentTripFile), JSON.stringify(currentTrip));
+      } else {
+        fbRef.set({ places: currentTrip.places, visibleCategories: currentTrip.visibleCategories });
+      }
+      renderMarkers();
+      renderHome();
+      if (activeCategory && el('screen-category').classList.contains('active')) openCategory(activeCategory);
+    });
+  } else {
+    localStorage.setItem(storageKey(currentTripFile), JSON.stringify(currentTrip));
+  }
 }
 function populateTripSelect(files, activeFile){
   const sel = el('tripSelect');
@@ -751,6 +804,17 @@ async function boot(){
     showScreen('screen-catsettings');
   });
   el('catSettingsBackBtn').addEventListener('click', () => showScreen('screen-home'));
+
+  el('roomStatus').textContent = fbDb ? getRoom() : 'offline';
+  el('roomItem').addEventListener('click', () => {
+    const current = getRoom();
+    const next = prompt('Sync room code (share this with whoever you want to sync with):', current);
+    if (!next || next.trim() === current) return;
+    localStorage.setItem(ROOM_KEY, next.trim());
+    el('roomStatus').textContent = fbDb ? getRoom() : 'offline';
+    setTrip(currentTripFile, currentTrip);
+    el('menu').classList.remove('open');
+  });
 
   el('photoAddBtn').addEventListener('click', () => el('f-photo-file').click());
   el('photoRemoveBtn').addEventListener('click', () => {
