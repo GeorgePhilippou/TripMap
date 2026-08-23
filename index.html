@@ -276,7 +276,7 @@
     <div class="hero" id="heroCard">
       <div id="heroMap" class="hero-map"></div>
       <div id="heroPhoto" class="hero-photo"></div>
-      <div class="hero-pill" id="heroPill"><span class="hero-empty">No places yet — tap the map to start</span></div>
+      <div class="hero-pill" id="heroPill"><span class="hero-empty">No places yet — tap + on the map to start</span></div>
     </div>
 
     <div class="grid" id="categoryGrid"></div>
@@ -395,7 +395,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const APP_VERSION = '1.10.0';
+const APP_VERSION = '1.11.0';
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
@@ -541,7 +541,6 @@ function initMap(){
   map = L.map('map', { zoomControl: false });
   L.control.zoom({ position: 'bottomright' }).addTo(map);
   L.tileLayer(TILE_URL, { maxZoom: 20, attribution: TILE_ATTRIBUTION }).addTo(map);
-  map.on('click', e => { if (!placing) openEditor(null, e.latlng); });
 }
 function initHeroMap(){
   heroMap = L.map('heroMap', {
@@ -702,7 +701,7 @@ function renderHome(){
   } else {
     el('heroPill').innerHTML = total
       ? `<span class="hero-empty">All caught up — everything visited</span>`
-      : `<span class="hero-empty">No places yet — tap the map to start</span>`;
+      : `<span class="hero-empty">No places yet — tap + on the map to start</span>`;
   }
 
   const visibleCats = CATEGORIES.filter(c => currentTrip.visibleCategories.includes(c.key));
@@ -760,7 +759,7 @@ function openCategory(key){
   const list = el('catList');
   list.innerHTML = '';
   if (!places.length){
-    list.innerHTML = `<div class="empty-hint">No ${cat.label.toLowerCase()} yet. Add one from the map, or pick a suggestion below.</div>`;
+    list.innerHTML = `<div class="empty-hint">No ${cat.label.toLowerCase()} yet. Tap + on the map to add one, or pick a suggestion below.</div>`;
   } else {
     places.forEach(p => {
       const div = document.createElement('div');
