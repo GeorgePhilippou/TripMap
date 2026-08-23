@@ -2,5 +2,56 @@
   "name": "Cyprus",
   "center": [34.9823, 33.1451],
   "zoom": 9,
-  "places": []
+  "places": [],
+  "suggestions": {
+    "sight": [
+      { "id": "kourion", "name": "Kourion Ancient Theatre", "lat": 34.6642, "lng": 32.8886 },
+      { "id": "kykkos", "name": "Kykkos Monastery", "lat": 34.9868, "lng": 32.7404 },
+      { "id": "capegreco", "name": "Cape Greco", "lat": 34.9564, "lng": 34.0611 },
+      { "id": "aphroditerock", "name": "Aphrodite's Rock (Petra tou Romiou)", "lat": 34.6547, "lng": 32.6256 }
+    ],
+    "food": [
+      { "id": "finikoudes", "name": "Finikoudes Promenade, Larnaca", "lat": 34.9126, "lng": 33.6360 },
+      { "id": "ayianapasquare", "name": "Ayia Napa Square", "lat": 34.9880, "lng": 33.9910 },
+      { "id": "limassololdtown", "name": "Limassol Old Town tavernas", "lat": 34.6720, "lng": 33.0430 }
+    ],
+    "beach": [
+      { "id": "nissibeach", "name": "Nissi Beach, Ayia Napa", "lat": 34.9880, "lng": 33.9678 },
+      { "id": "figtreebay", "name": "Fig Tree Bay, Protaras", "lat": 35.0086, "lng": 34.0567 },
+      { "id": "konnos", "name": "Konnos Bay", "lat": 34.9700, "lng": 34.0683 },
+      { "id": "coralbay", "name": "Coral Bay, Paphos", "lat": 34.8425, "lng": 32.3556 },
+      { "id": "larabay", "name": "Lara Bay", "lat": 34.9280, "lng": 32.2680 }
+    ],
+    "historical": [
+      { "id": "paphospark", "name": "Paphos Archaeological Park", "lat": 34.7568, "lng": 32.4066 },
+      { "id": "tombsofkings", "name": "Tombs of the Kings", "lat": 34.7679, "lng": 32.3996 },
+      { "id": "kolossi", "name": "Kolossi Castle", "lat": 34.6428, "lng": 32.9083 },
+      { "id": "choirokoitia", "name": "Choirokoitia Neolithic Settlement", "lat": 34.7978, "lng": 33.3406 }
+    ],
+    "fruit": [
+      { "id": "limassolmarket", "name": "Limassol Municipal Market", "lat": 34.6740, "lng": 33.0430 },
+      { "id": "larnacamarket", "name": "Larnaca Municipal Market", "lat": 34.9165, "lng": 33.6360 }
+    ],
+    "shops": [
+      { "id": "ledrastreet", "name": "Ledra Street, Nicosia", "lat": 35.1706, "lng": 33.3631 },
+      { "id": "mymalllimassol", "name": "My Mall Limassol", "lat": 34.7000, "lng": 33.0490 },
+      { "id": "kingsavenue", "name": "Kings Avenue Mall, Paphos", "lat": 34.7770, "lng": 32.4230 }
+    ],
+    "activity": [
+      { "id": "avakasgorge", "name": "Avakas Gorge Hike", "lat": 34.8283, "lng": 32.3086 },
+      { "id": "troodoshiking", "name": "Troodos Mountain Trails", "lat": 34.9236, "lng": 32.8790 },
+      { "id": "cyherbia", "name": "CYHerbia Botanical Park", "lat": 34.7280, "lng": 32.5510 }
+    ],
+    "stays": [],
+    "airport": [
+      { "id": "larnacaairport", "name": "Larnaca International Airport", "lat": 34.8751, "lng": 33.6249 },
+      { "id": "paphosairport", "name": "Paphos International Airport", "lat": 34.7180, "lng": 32.4857 },
+      { "id": "limassolport", "name": "Limassol Port", "lat": 34.6520, "lng": 33.0220 }
+    ],
+    "general": [],
+    "hike": [
+      { "id": "caledoniafalls", "name": "Caledonia Falls Trail", "lat": 34.9420, "lng": 32.8580 },
+      { "id": "aphroditetrail", "name": "Aphrodite Trail, Akamas", "lat": 34.9600, "lng": 32.3200 }
+    ]
+  }
 }

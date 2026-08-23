@@ -1,0 +1,52 @@
+{
+  "name": "Amsterdam",
+  "center": [52.3676, 4.9041],
+  "zoom": 13,
+  "places": [],
+  "suggestions": {
+    "sight": [
+      { "id": "annefrank", "name": "Anne Frank House", "lat": 52.3752, "lng": 4.8840 },
+      { "id": "rijksmuseum", "name": "Rijksmuseum", "lat": 52.3600, "lng": 4.8852 },
+      { "id": "vangoghmuseum", "name": "Van Gogh Museum", "lat": 52.3584, "lng": 4.8811 },
+      { "id": "vondelpark", "name": "Vondelpark", "lat": 52.3579, "lng": 4.8686 },
+      { "id": "damsquare", "name": "Dam Square", "lat": 52.3730, "lng": 4.8926 }
+    ],
+    "food": [
+      { "id": "albertcuyp", "name": "Albert Cuyp Market food stalls", "lat": 52.3565, "lng": 4.8914 },
+      { "id": "foodhallen", "name": "De Foodhallen", "lat": 52.3670, "lng": 4.8686 },
+      { "id": "jordaancafes", "name": "Jordaan neighbourhood cafes", "lat": 52.3746, "lng": 4.8806 }
+    ],
+    "beach": [
+      { "id": "zandvoort", "name": "Zandvoort aan Zee (day trip)", "lat": 52.3720, "lng": 4.5330 }
+    ],
+    "historical": [
+      { "id": "amsterdammuseum", "name": "Amsterdam Museum", "lat": 52.3701, "lng": 4.8925 },
+      { "id": "begijnhof", "name": "Begijnhof", "lat": 52.3690, "lng": 4.8910 },
+      { "id": "royalpalace", "name": "Royal Palace Amsterdam", "lat": 52.3731, "lng": 4.8912 },
+      { "id": "westerkerk", "name": "Westerkerk", "lat": 52.3746, "lng": 4.8838 }
+    ],
+    "fruit": [
+      { "id": "noordermarkt", "name": "Noordermarkt farmers market", "lat": 52.3847, "lng": 4.8853 },
+      { "id": "depijpmarket", "name": "De Pijp market stalls", "lat": 52.3565, "lng": 4.8914 }
+    ],
+    "shops": [
+      { "id": "bijenkorf", "name": "De Bijenkorf", "lat": 52.3736, "lng": 4.8930 },
+      { "id": "ninestreets", "name": "Nine Streets (De 9 Straatjes)", "lat": 52.3690, "lng": 4.8840 },
+      { "id": "kalverstraat", "name": "Kalverstraat", "lat": 52.3701, "lng": 4.8925 }
+    ],
+    "activity": [
+      { "id": "canalcruise", "name": "Canal Cruise", "lat": 52.3702, "lng": 4.8952 },
+      { "id": "adamlookout", "name": "A'DAM Lookout", "lat": 52.3839, "lng": 4.9004 },
+      { "id": "heineken", "name": "Heineken Experience", "lat": 52.3579, "lng": 4.8912 }
+    ],
+    "stays": [],
+    "airport": [
+      { "id": "schiphol", "name": "Amsterdam Schiphol Airport", "lat": 52.3105, "lng": 4.7683 },
+      { "id": "centraal", "name": "Amsterdam Centraal Station", "lat": 52.3791, "lng": 4.9003 }
+    ],
+    "general": [],
+    "hike": [
+      { "id": "amsterdamsebos", "name": "Amsterdamse Bos trails", "lat": 52.3183, "lng": 4.8285 }
+    ]
+  }
+}
