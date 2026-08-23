@@ -2,6 +2,7 @@
   "name": "Amsterdam",
   "center": [52.3676, 4.9041],
   "zoom": 13,
+  "searchBounds": [[52.28, 4.72], [52.44, 5.05]],
   "places": [],
   "suggestions": {
     "sight": [

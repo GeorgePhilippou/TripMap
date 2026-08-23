@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Trip Map</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -364,7 +367,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const APP_VERSION = '1.8.0';
+const APP_VERSION = '1.9.0';
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
@@ -554,10 +557,15 @@ function stopPlacing(){
 }
 
 function getTripViewbox(){
-  // Use whatever the map is currently showing (padded generously) rather than a
-  // hand-derived degree-per-zoom estimate - Leaflet already knows the real visible
-  // extent for the container's actual size, which a manual formula can't reliably match.
-  const b = map.getBounds().pad(0.6);
+  // Prefer the trip's own curated/geocoded bounds - stable regardless of how the user
+  // has panned or zoomed. Deriving the box from the live viewport (even padded) risks
+  // spilling into a neighbouring country once padding is added to an already-wide view
+  // (e.g. Cyprus + padding reaching into Turkey's coastline).
+  if (currentTrip.searchBounds){
+    const [[south, west], [north, east]] = currentTrip.searchBounds;
+    return [west, north, east, south];
+  }
+  const b = map.getBounds().pad(0.15);
   return [b.getWest(), b.getNorth(), b.getEast(), b.getSouth()];
 }
 function searchPinIcon(){
@@ -845,6 +853,7 @@ function setTrip(file, definition){
     center: definition.center || [20, 0],
     zoom: definition.zoom || 4,
     bounds: definition.bounds || null,
+    searchBounds: definition.searchBounds || definition.bounds || null,
     suggestions: definition.suggestions || {},
     places: [],
     visibleCategories: loadVisibleCategories(file)

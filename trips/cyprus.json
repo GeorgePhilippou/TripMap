@@ -2,6 +2,7 @@
   "name": "Cyprus",
   "center": [34.9823, 33.1451],
   "zoom": 9,
+  "searchBounds": [[34.53, 32.22], [35.72, 34.62]],
   "places": [],
   "suggestions": {
     "sight": [
