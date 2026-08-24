@@ -19,7 +19,7 @@
 <style>
   :root{
     --bg:#F3F0E2; --surface:#FAF8EF; --surface2:#EFEBDC; --border:#DBD5C0;
-    --text:#262A1C; --muted:#6E7260; --accent:#5D7350; --accent-ink:#F6F5EA;
+    --text:#262A1C; --muted:#6E7260; --accent:#5D7350; --accent-ink:#F6F5EA; --accent-soft:#DCE4CC;
     --sight:#4F6B44;      --sight-soft:#DCE4CC;
     --food:#8A6A28;       --food-soft:#F0E3BE;
     --beach:#396F6C;      --beach-soft:#D3E6E3;
@@ -69,19 +69,20 @@
   .screen{ display:none; flex-direction:column; flex:1; min-height:0; overflow-y:auto; padding-bottom:16px; }
   #screen-home{ overflow:hidden; padding-bottom:calc(14px + env(safe-area-inset-bottom)); }
   .screen.active{ display:flex; }
-  .eyebrow{ font-size:12px; color:var(--muted); letter-spacing:.06em; text-transform:uppercase; margin-bottom:4px; font-weight:600; }
+  .eyebrow{ font-size:12px; color:var(--accent); letter-spacing:.06em; text-transform:uppercase; margin-bottom:4px; font-weight:600; }
   h1.trip-title{ font-family:'Fraunces',serif; font-weight:500; font-size:clamp(26px,7.5vh,34px); margin:0 0 2px; letter-spacing:-.01em; line-height:1.1; }
   .trip-sub{ color:var(--muted); font-size:14px; }
   .home-header{ padding:4px 18px 0; flex-shrink:0; }
-  .progress-track{ height:4px; background:var(--surface2); border-radius:3px; margin-top:5px; overflow:hidden; display:none; }
+  .progress-track{ height:4px; background:var(--accent-soft); border-radius:3px; margin-top:5px; overflow:hidden; display:none; }
   .progress-fill{ height:100%; width:0; background:var(--accent); border-radius:3px; transition:width .3s ease; }
   .info-strip{ display:flex; flex-wrap:wrap; gap:5px; margin-top:5px; }
   .info-pill{
-    background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:4px 8px;
+    background:var(--accent-soft); border:1px solid var(--accent-soft); border-radius:8px; padding:4px 8px;
     font-size:11px; color:var(--text); display:flex; align-items:center; gap:5px; max-width:100%;
   }
-  .info-pill svg{ width:14px; height:14px; flex-shrink:0; color:var(--muted); }
+  .info-pill svg{ width:14px; height:14px; flex-shrink:0; color:var(--accent); }
   .info-pill span{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .info-pill .activity-dot{ width:6px; height:6px; border-radius:50%; background:var(--accent); flex-shrink:0; }
   .info-pill.clickable{ cursor:pointer; }
   .info-pill.clickable:hover{ border-color:var(--accent); }
 
@@ -91,9 +92,10 @@
     display:flex; align-items:flex-end; padding:8px; cursor:pointer; flex-shrink:0;
     box-shadow:0 1px 3px rgba(38,42,28,.05);
   }
+  .hero:hover{ border-color:var(--accent); }
   .hero-map{ position:absolute; inset:0; z-index:0; pointer-events:none; }
   .hero-photo{ position:absolute; inset:0; z-index:0; background-size:cover; background-position:center; display:none; }
-  .hero-pill{ position:relative; z-index:1; background:var(--overlay); border:1px solid var(--border); border-radius:10px; padding:7px 11px; font-size:13px; }
+  .hero-pill{ position:relative; z-index:1; background:var(--overlay); border:1px solid var(--accent); border-radius:10px; padding:7px 11px; font-size:13px; }
   .hero-pill b{ font-weight:600; }
   .hero-pill .count{ color:var(--muted); font-size:11px; }
   .hero-empty{ color:var(--muted); font-size:13px; }
@@ -127,6 +129,8 @@
   .cat-title-row{ padding:14px 18px 0; flex-shrink:0; display:flex; align-items:center; gap:10px; }
   .cat-title-row h2{ font-family:'Fraunces',serif; font-weight:500; font-size:25px; margin:0; flex:1; }
   .icon-btn.active{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  #catSortBtn{ color:var(--accent); }
+  #catSortBtn.active{ color:var(--accent-ink); }
   .place-list{ margin-top:8px; }
   .place{ padding:14px 18px; border-bottom:1px solid var(--border); cursor:pointer; display:flex; align-items:center; gap:12px; }
   .place:hover{ background:var(--surface); }
@@ -140,9 +144,9 @@
   .empty-hint{ padding:24px 18px; color:var(--muted); font-size:13px; line-height:1.6; text-align:center; }
 
   /* ---- itinerary ---- */
-  .itinerary-day-label{ font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; padding:18px 18px 6px; font-weight:600; }
+  .itinerary-day-label{ font-size:11px; color:var(--accent); text-transform:uppercase; letter-spacing:.04em; padding:18px 18px 6px; font-weight:600; }
 
-  .suggest-label{ font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; padding:18px 18px 6px; }
+  .suggest-label{ font-size:11px; color:var(--accent); text-transform:uppercase; letter-spacing:.04em; padding:18px 18px 6px; }
   .suggest-row{ display:flex; align-items:center; gap:10px; padding:10px 18px; border-bottom:1px solid var(--border); }
   .suggest-dot{ width:9px; height:9px; border-radius:50%; border:1.5px solid var(--border); flex-shrink:0; }
   .suggest-name{ flex:1; font-size:15px; }
@@ -194,10 +198,10 @@
     border:2px solid var(--accent-ink); box-shadow:0 1px 4px rgba(0,0,0,.35);
   }
   .you-are-here{
-    width:16px; height:16px; border-radius:50%; background:#4A90D9; border:3px solid var(--surface);
-    box-shadow:0 0 0 5px rgba(74,144,217,.28), 0 1px 4px rgba(0,0,0,.3);
+    width:16px; height:16px; border-radius:50%; background:var(--accent); border:3px solid var(--surface);
+    box-shadow:0 0 0 5px rgba(93,115,80,.28), 0 1px 4px rgba(0,0,0,.3);
   }
-  .locate-btn{ box-shadow:0 2px 8px rgba(0,0,0,.12); }
+  .locate-btn{ box-shadow:0 2px 8px rgba(0,0,0,.12); color:var(--accent); }
   .pin-crosshair{
     position:absolute; top:50%; left:50%; margin-left:-14px; margin-top:-32px; z-index:600;
     display:none; pointer-events:none;
@@ -229,7 +233,7 @@
     width:100%; max-width:480px; display:flex; flex-direction:column; gap:12px;
   }
   #editor-box h3{ font-family:'Fraunces',serif; font-weight:500; margin:0 0 2px; font-size:19px; }
-  #editor-box label{ font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  #editor-box label{ font-size:11px; color:var(--accent); text-transform:uppercase; letter-spacing:.04em; }
   #editor-box input, #editor-box select, #editor-box textarea{
     width:100%; background:var(--surface2); color:var(--text); border:1px solid var(--border);
     border-radius:8px; padding:10px; font-size:14px; font-family:inherit; margin-top:4px;
@@ -267,7 +271,7 @@
   }
   #menu-box .menu-item:hover{ background:var(--surface2); }
   #roomStatus{ font-size:12px; color:var(--muted); max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  #menu-box .menu-label{ font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; padding:10px 14px 2px; }
+  #menu-box .menu-label{ font-size:11px; color:var(--accent); text-transform:uppercase; letter-spacing:.04em; padding:10px 14px 2px; }
   #menu-box select{ width:100%; background:var(--surface2); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:10px; font-size:14px; font-family:inherit; }
 
   .leaflet-div-icon{ background:transparent; border:none; }
@@ -486,7 +490,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const APP_VERSION = '1.17.0';
+const APP_VERSION = '1.17.1';
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
@@ -946,7 +950,7 @@ function renderHome(){
   }
   const recent = currentTrip.places.filter(p => p.addedAt).sort((a, b) => b.addedAt - a.addedAt)[0];
   if (recent){
-    pills.push(`<div class="info-pill clickable" id="recentActivityPill"><span>${escapeHtml(recent.addedBy || 'Someone')} added <b>${escapeHtml(recent.name)}</b> &middot; ${formatRelativeTime(recent.addedAt)}</span></div>`);
+    pills.push(`<div class="info-pill clickable" id="recentActivityPill"><span class="activity-dot"></span><span>${escapeHtml(recent.addedBy || 'Someone')} added <b>${escapeHtml(recent.name)}</b> &middot; ${formatRelativeTime(recent.addedAt)}</span></div>`);
   }
   el('infoStrip').innerHTML = pills.join('');
   if (recent){
