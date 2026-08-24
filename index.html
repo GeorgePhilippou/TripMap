@@ -145,9 +145,8 @@
   .empty-hint{ padding:24px 18px; color:var(--muted); font-size:13px; line-height:1.6; text-align:center; }
 
   /* ---- itinerary ---- */
-  .itinerary-day-label{ font-size:11px; color:var(--accent); text-transform:uppercase; letter-spacing:.04em; padding:18px 18px 6px; font-weight:600; }
+  .section-label{ font-size:11px; color:var(--accent); text-transform:uppercase; letter-spacing:.04em; padding:18px 18px 6px; font-weight:600; }
 
-  .suggest-label{ font-size:11px; color:var(--accent); text-transform:uppercase; letter-spacing:.04em; padding:18px 18px 6px; }
   .suggest-row{ display:flex; align-items:center; gap:10px; padding:10px 18px; border-bottom:1px solid var(--border); }
   .suggest-dot{ width:9px; height:9px; border-radius:50%; border:1.5px solid var(--border); flex-shrink:0; }
   .suggest-name{ flex:1; font-size:15px; }
@@ -492,7 +491,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const APP_VERSION = '1.19.0';
+const APP_VERSION = '1.20.0';
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
@@ -560,6 +559,34 @@ function distanceKm(lat1, lng1, lat2, lng2){
 }
 function formatDistance(km){
   return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`;
+}
+function extractLocality(addr){
+  if (!addr) return null;
+  return addr.suburb || addr.neighbourhood || addr.quarter || addr.town || addr.village
+    || addr.city_district || addr.municipality || addr.city || addr.county || null;
+}
+let localityQueue = Promise.resolve();
+const localityInFlight = new Set();
+function ensureLocality(p){
+  if (p.locality !== undefined || localityInFlight.has(p.id)) return;
+  localityInFlight.add(p.id);
+  localityQueue = localityQueue
+    .then(() => new Promise(resolve => setTimeout(resolve, 1100))) // Nominatim's usage policy caps at 1 request/second
+    .then(async () => {
+      try {
+        const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${p.lat}&lon=${p.lng}&zoom=14&addressdetails=1`;
+        const res = await fetch(url);
+        const data = await res.json();
+        p.locality = extractLocality(data.address) || null; // null = genuinely no locality-level data, cache it
+        saveTrip();
+        if (activeCategory === p.category && el('screen-category').classList.contains('active')) openCategory(activeCategory);
+      } catch (err) {
+        // leave p.locality undefined so a transient failure gets retried next time this category is opened,
+        // instead of being cached as "no data" forever
+      } finally {
+        localityInFlight.delete(p.id);
+      }
+    });
 }
 const USER_NAME_KEY = 'tripmap:username';
 function getUserName(){
@@ -1145,32 +1172,50 @@ function openCategory(key){
   el('catTitle').textContent = cat.label;
   renderCatBanner(key);
   const places = currentTrip.places.filter(p => p.category === key);
+  places.forEach(p => ensureLocality(p));
   const useDistanceSort = sortByDistance && userLatLng;
-  const sorted = places.slice().sort((a, b) => useDistanceSort
-    ? distanceKm(userLatLng[0], userLatLng[1], a.lat, a.lng) - distanceKm(userLatLng[0], userLatLng[1], b.lat, b.lng)
-    : (a.visited === b.visited) ? 0 : (a.visited ? 1 : -1));
   el('catSortBtn').classList.toggle('active', !!useDistanceSort);
   const list = el('catList');
   list.innerHTML = '';
   if (!places.length){
     list.innerHTML = `<div class="empty-hint">No ${cat.label.toLowerCase()} yet. Tap + on the map to add one, or pick a suggestion below.</div>`;
   } else {
-    sorted.forEach(p => {
-      const div = document.createElement('div');
-      div.className = 'place' + (p.visited ? ' visited' : '');
-      const metaParts = [];
-      if (p.notes) metaParts.push(escapeHtml(p.notes));
-      if (userLatLng) metaParts.push(`${formatDistance(distanceKm(userLatLng[0], userLatLng[1], p.lat, p.lng))} away`);
-      div.innerHTML = `
-        ${p.photo ? `<img class="place-thumb" src="${p.photo}">` : `<span class="place-dot" style="background:var(--${p.category})"></span>`}
-        <div class="place-main">
-          <span class="place-name">${escapeHtml(p.name)}</span>
-          ${metaParts.length ? `<div class="place-notes">${metaParts.join(' &middot; ')}</div>` : ''}
-        </div>
-        ${p.visited ? '<span class="place-visited-tag">Been</span>' : ''}
-        <span class="chev">&#8250;</span>`;
-      div.addEventListener('click', () => openEditor(p.id));
-      list.appendChild(div);
+    const groups = {};
+    places.forEach(p => {
+      const gkey = p.locality || 'Other places';
+      (groups[gkey] = groups[gkey] || []).push(p);
+    });
+    const groupDist = k => Math.min(...groups[k].map(p => distanceKm(userLatLng[0], userLatLng[1], p.lat, p.lng)));
+    const groupKeys = Object.keys(groups).sort((a, b) => {
+      if (a === 'Other places') return 1;
+      if (b === 'Other places') return -1;
+      return useDistanceSort ? groupDist(a) - groupDist(b) : a.localeCompare(b);
+    });
+    groupKeys.forEach(gkey => {
+      const groupPlaces = groups[gkey].slice().sort((a, b) => useDistanceSort
+        ? distanceKm(userLatLng[0], userLatLng[1], a.lat, a.lng) - distanceKm(userLatLng[0], userLatLng[1], b.lat, b.lng)
+        : (a.visited === b.visited) ? 0 : (a.visited ? 1 : -1));
+      const label = document.createElement('div');
+      label.className = 'section-label';
+      label.textContent = `${gkey} (${groupPlaces.length})`;
+      list.appendChild(label);
+      groupPlaces.forEach(p => {
+        const div = document.createElement('div');
+        div.className = 'place' + (p.visited ? ' visited' : '');
+        const metaParts = [];
+        if (p.notes) metaParts.push(escapeHtml(p.notes));
+        if (userLatLng) metaParts.push(`${formatDistance(distanceKm(userLatLng[0], userLatLng[1], p.lat, p.lng))} away`);
+        div.innerHTML = `
+          ${p.photo ? `<img class="place-thumb" src="${p.photo}">` : `<span class="place-dot" style="background:var(--${p.category})"></span>`}
+          <div class="place-main">
+            <span class="place-name">${escapeHtml(p.name)}</span>
+            ${metaParts.length ? `<div class="place-notes">${metaParts.join(' &middot; ')}</div>` : ''}
+          </div>
+          ${p.visited ? '<span class="place-visited-tag">Been</span>' : ''}
+          <span class="chev">&#8250;</span>`;
+        div.addEventListener('click', () => openEditor(p.id));
+        list.appendChild(div);
+      });
     });
   }
 
@@ -1179,8 +1224,8 @@ function openCategory(key){
   const remaining = suggestions.filter(s => !addedIds.has(s.id));
   if (remaining.length){
     const label = document.createElement('div');
-    label.className = 'suggest-label';
-    label.textContent = 'Suggested';
+    label.className = 'section-label';
+    label.textContent = `Suggested (${remaining.length})`;
     list.appendChild(label);
     remaining.forEach(s => {
       const row = document.createElement('div');
@@ -1227,7 +1272,7 @@ function renderItinerary(){
   }
   days.forEach(day => {
     const label = document.createElement('div');
-    label.className = 'itinerary-day-label';
+    label.className = 'section-label';
     label.textContent = `Day ${day}`;
     list.appendChild(label);
     grouped[day].forEach(p => {
