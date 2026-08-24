@@ -102,6 +102,19 @@
   /* ---- category / list screen ---- */
   .cat-header{ display:flex; align-items:center; gap:10px; padding:calc(10px + env(safe-area-inset-top)) 18px 0; flex-shrink:0; }
   .cat-header h2{ font-family:'Fraunces',serif; font-weight:500; font-size:25px; margin:0; flex:1; }
+  .cat-banner{
+    position:relative; height:130px; flex-shrink:0; overflow:hidden;
+    display:flex; align-items:flex-start; padding:calc(10px + env(safe-area-inset-top)) 18px 0;
+    background-size:cover; background-position:center;
+  }
+  .cat-banner .icon-btn{
+    position:relative; z-index:1; background:var(--overlay); backdrop-filter:blur(6px);
+    box-shadow:0 2px 8px rgba(0,0,0,.15);
+  }
+  .cat-banner-icon{ position:absolute; right:-14px; bottom:-22px; opacity:.3; color:#fff; pointer-events:none; }
+  .cat-banner-icon svg{ width:120px; height:120px; }
+  .cat-title-row{ padding:14px 18px 0; flex-shrink:0; }
+  .cat-title-row h2{ font-family:'Fraunces',serif; font-weight:500; font-size:25px; margin:0; }
   .place-list{ margin-top:8px; }
   .place{ padding:14px 18px; border-bottom:1px solid var(--border); cursor:pointer; display:flex; align-items:center; gap:12px; }
   .place:hover{ background:var(--surface); }
@@ -300,8 +313,11 @@
 
   <!-- CATEGORY LIST -->
   <section id="screen-category" class="screen">
-    <div class="cat-header">
+    <div class="cat-banner" id="catBanner">
       <button class="icon-btn" id="catBackBtn">&#8592;</button>
+      <div class="cat-banner-icon" id="catBannerIcon"></div>
+    </div>
+    <div class="cat-title-row">
       <h2 id="catTitle">Category</h2>
     </div>
     <div class="place-list" id="catList"></div>
@@ -409,7 +425,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const APP_VERSION = '1.14.0';
+const APP_VERSION = '1.15.0';
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
@@ -807,10 +823,23 @@ function toggleCategoryVisible(key){
 }
 
 /* ---- category list ---- */
+function renderCatBanner(key){
+  const cat = CAT_BY_KEY[key];
+  const banner = el('catBanner');
+  const withPhoto = currentTrip.places.find(p => p.category === key && p.photo);
+  if (withPhoto){
+    banner.style.backgroundImage = `linear-gradient(180deg, rgba(0,0,0,.05), rgba(0,0,0,.4)), url(${withPhoto.photo})`;
+    el('catBannerIcon').innerHTML = '';
+  } else {
+    banner.style.backgroundImage = `linear-gradient(135deg, var(--${key}), var(--${key}-soft))`;
+    el('catBannerIcon').innerHTML = cat.icon;
+  }
+}
 function openCategory(key){
   activeCategory = key;
   const cat = CAT_BY_KEY[key];
   el('catTitle').textContent = cat.label;
+  renderCatBanner(key);
   const places = currentTrip.places.filter(p => p.category === key);
   const sorted = places.slice().sort((a, b) => (a.visited === b.visited) ? 0 : (a.visited ? 1 : -1));
   const list = el('catList');
