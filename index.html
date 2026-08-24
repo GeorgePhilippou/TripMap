@@ -1182,9 +1182,25 @@ function updateSideMap(){
     const color = categoryColor(p.category);
     L.circleMarker([p.lat, p.lng], { radius: 5, color: cssVar('--surface', '--surface'), weight: 1.5, fillColor: color, fillOpacity: 1 }).addTo(sideMarkersLayer);
   });
+  const places = currentTrip.places;
   const applyView = () => {
-    if (currentTrip.bounds) sideMap.fitBounds(currentTrip.bounds, { animate: false, maxZoom: 16, padding: [20, 20] });
-    else sideMap.setView(currentTrip.center || [20, 0], currentTrip.zoom || 4, { animate: false });
+    if (places.length === 1){
+      sideMap.setView([places[0].lat, places[0].lng], 14, { animate: false });
+    } else if (places.length > 1){
+      // Fit to where the places actually are, not the trip's whole search
+      // area - a "cover" zoom was tried here first, but trip itineraries are
+      // often strung out along a coastline or route rather than a neat blob,
+      // and cropping to fill the narrow panel could zoom in past the pins at
+      // either end and cut them out of view entirely. A standard fit (all
+      // pins guaranteed visible) with generous padding is safer and still
+      // looks far tighter than falling back to the whole country.
+      const bounds = L.latLngBounds(places.map(p => [p.lat, p.lng]));
+      sideMap.fitBounds(bounds, { animate: false, maxZoom: 15, padding: [28, 28] });
+    } else if (currentTrip.bounds){
+      sideMap.fitBounds(currentTrip.bounds, { animate: false, maxZoom: 12, padding: [10, 10] });
+    } else {
+      sideMap.setView(currentTrip.center || [20, 0], currentTrip.zoom || 4, { animate: false });
+    }
   };
   applyView();
   // Same invalidateSize-then-reapply defensive pattern as updateHeroMap(): the
