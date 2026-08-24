@@ -88,9 +88,10 @@
 
   .hero{
     margin:8px 18px 0; border-radius:16px; overflow:hidden; border:1px solid var(--border);
-    position:relative; height:clamp(64px,10vh,140px); background:linear-gradient(160deg,var(--surface2),var(--surface));
+    position:relative; height:clamp(64px,var(--hero-h,10vh),320px); background:linear-gradient(160deg,var(--surface2),var(--surface));
     display:flex; align-items:flex-end; padding:8px; cursor:pointer; flex-shrink:0;
     box-shadow:0 1px 3px rgba(38,42,28,.05);
+    transition:height .25s ease;
   }
   .hero:hover{ border-color:var(--accent); }
   .hero-map{ position:absolute; inset:0; z-index:0; pointer-events:none; }
@@ -382,7 +383,7 @@
         <div id="mapLegendList"></div>
       </div>
       <div class="search-wrap">
-        <input id="search" type="text" placeholder="Search a place & press Enter…" autocomplete="off">
+        <input id="search" type="text" placeholder="Search, or paste a Maps link…" autocomplete="off">
         <div id="searchResults" class="search-results"></div>
       </div>
       <div id="pinCrosshair" class="pin-crosshair"><div class="pin-crosshair-icon"></div></div>
@@ -490,7 +491,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const APP_VERSION = '1.17.1';
+const APP_VERSION = '1.18.0';
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
@@ -789,6 +790,9 @@ function initHeroMap(){
   });
   L.tileLayer(TILE_URL, { maxZoom: 20 }).addTo(heroMap);
   heroMarkersLayer = L.layerGroup().addTo(heroMap);
+  el('heroCard').addEventListener('transitionend', e => {
+    if (e.propertyName === 'height') updateHeroMap();
+  });
 }
 function updateHeroMap(){
   if (!heroMap) return;
@@ -858,6 +862,86 @@ function selectSearchResult(r){
   map.flyTo([lat, lon], 16);
   openEditor(null, { lat, lng: lon });
   el('f-name').value = r.display_name.split(',')[0];
+}
+function parseLocationInput(raw){
+  const text = (raw || '').trim();
+  if (!text) return null;
+
+  const coordMatch = text.match(/^(-?\d{1,3}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)$/);
+  if (coordMatch){
+    const lat = parseFloat(coordMatch[1]), lng = parseFloat(coordMatch[2]);
+    if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) return { lat, lng, name: '' };
+  }
+
+  const urlMatch = text.match(/https?:\/\/\S+/);
+  const url = urlMatch ? urlMatch[0] : (/^https?:\/\//.test(text) ? text : null);
+  if (url){
+    let u;
+    try { u = new URL(url); } catch (err) { return { query: text }; }
+
+    if (u.hostname.includes('maps.apple.com')){
+      const ll = u.searchParams.get('ll') || u.searchParams.get('coordinate');
+      const name = u.searchParams.get('q') || u.searchParams.get('name') || '';
+      if (ll){
+        const [lat, lng] = ll.split(',').map(parseFloat);
+        if (!isNaN(lat) && !isNaN(lng)) return { lat, lng, name };
+      }
+    }
+
+    if (u.hostname.includes('google.') && u.pathname.includes('/maps')){
+      let name = '';
+      const placeMatch = u.pathname.match(/\/place\/([^/@]+)/);
+      if (placeMatch) name = decodeURIComponent(placeMatch[1].replace(/\+/g, ' '));
+      const qParam = u.searchParams.get('q') || u.searchParams.get('query');
+      if (qParam && /^-?\d+\.\d+,-?\d+\.\d+$/.test(qParam)){
+        const [lat, lng] = qParam.split(',').map(parseFloat);
+        return { lat, lng, name };
+      }
+      const atMatch = u.href.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+      if (atMatch) return { lat: parseFloat(atMatch[1]), lng: parseFloat(atMatch[2]), name };
+    }
+
+    // Shortened link (e.g. maps.app.goo.gl) or an unrecognized maps URL -
+    // the real destination is server-side only; this single-file client-side
+    // app has no backend to follow the redirect and read the resolved coords.
+    return { unresolved: true, url };
+  }
+
+  return { query: text };
+}
+function handleParsedLocation(parsed){
+  if (!parsed) return false;
+  if (parsed.lat != null && parsed.lng != null){
+    clearSearchResults();
+    el('search').value = '';
+    map.flyTo([parsed.lat, parsed.lng], 16);
+    openEditor(null, { lat: parsed.lat, lng: parsed.lng });
+    if (parsed.name) el('f-name').value = parsed.name;
+    return true;
+  }
+  if (parsed.unresolved){
+    alert('That looks like a shortened Maps link, which can’t be read directly. Try sharing the full address or place name instead, or use "Copy Address" in Maps and paste that here.');
+    return true;
+  }
+  return false;
+}
+function handleSharedLaunch(){
+  const params = new URLSearchParams(location.search);
+  const shared = [params.get('text'), params.get('url'), params.get('title')].filter(Boolean).join(' ').trim();
+  if (!shared) return;
+  history.replaceState({}, '', location.pathname);
+  const parsed = parseLocationInput(shared);
+  if (parsed && parsed.lat != null){
+    showScreen('screen-map');
+    handleParsedLocation(parsed);
+  } else if (parsed && parsed.unresolved){
+    showScreen('screen-map');
+    alert('You shared a Maps link, but it’s a shortened link Trip Map can’t read directly. Share the address or place name instead, or paste it into the search bar.');
+  } else {
+    showScreen('screen-map');
+    el('search').value = shared;
+    runSearch(shared);
+  }
 }
 function renderSearchResults(results){
   clearSearchMarkers();
@@ -929,6 +1013,10 @@ function renderMarkers(){
 
 /* ---- home ---- */
 function renderHome(){
+  const visibleCats = CATEGORIES.filter(c => currentTrip.visibleCategories.includes(c.key));
+  const rows = visibleCats.length ? Math.ceil(visibleCats.length / 2) : 1;
+  document.documentElement.style.setProperty('--hero-h', Math.max(9, 27 - rows * 3.2) + 'vh');
+
   el('tripName').textContent = currentTrip.name || 'Trip';
   const countdown = computeCountdownText(currentTrip.startDate, currentTrip.endDate);
   el('tripDates').textContent = countdown || currentTrip.dates || 'Trip';
@@ -974,7 +1062,6 @@ function renderHome(){
       : `<span class="hero-empty">No places yet — tap + on the map to start</span>`;
   }
 
-  const visibleCats = CATEGORIES.filter(c => currentTrip.visibleCategories.includes(c.key));
   const grid = el('categoryGrid');
   grid.innerHTML = '';
   if (!visibleCats.length){
@@ -1297,16 +1384,13 @@ function setTrip(file, definition){
     fbDatesRef = fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(file) + '/dates');
     fbDatesRef.on('value', snap => {
       if (file !== currentTripFile) return;
+      // Firebase prunes an object whose fields are all null, so "cleared" and
+      // "never set" are indistinguishable here - always treat a missing value
+      // as unset rather than resurrecting a stale local cache and pushing it
+      // back up, which would silently un-clear dates on a later reload.
       const remote = snap.val();
-      if (remote && typeof remote === 'object'){
-        currentTrip.startDate = remote.start || null;
-        currentTrip.endDate = remote.end || null;
-      } else {
-        const local = loadLocalDates(file);
-        currentTrip.startDate = local.start;
-        currentTrip.endDate = local.end;
-        fbDatesRef.set({ start: currentTrip.startDate, end: currentTrip.endDate });
-      }
+      currentTrip.startDate = (remote && remote.start) || null;
+      currentTrip.endDate = (remote && remote.end) || null;
       localStorage.setItem('tripmap:dates:' + file, JSON.stringify({ start: currentTrip.startDate, end: currentTrip.endDate }));
       renderHome();
     });
@@ -1563,12 +1647,24 @@ async function boot(){
     const q = e.target.value.trim();
     searchDebounceTimer = setTimeout(() => runSearch(q), 350);
   });
+  el('search').addEventListener('paste', () => {
+    setTimeout(() => {
+      const q = el('search').value.trim();
+      const parsed = parseLocationInput(q);
+      if (parsed && (parsed.lat != null || parsed.unresolved)){
+        clearTimeout(searchDebounceTimer);
+        handleParsedLocation(parsed);
+      }
+    }, 0);
+  });
   el('search').addEventListener('keydown', async e => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
     clearTimeout(searchDebounceTimer);
     const q = e.target.value.trim();
     if (!q) return;
+    const parsed = parseLocationInput(q);
+    if (handleParsedLocation(parsed)) return;
     if (lastSearchQuery === q && lastSearchResults.length){
       selectSearchResult(lastSearchResults[0]);
       return;
@@ -1577,6 +1673,8 @@ async function boot(){
     if (lastSearchResults.length) selectSearchResult(lastSearchResults[0]);
     else alert('No results for "' + q + '"');
   });
+
+  handleSharedLaunch();
 }
 
 boot();
