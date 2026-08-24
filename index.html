@@ -153,17 +153,6 @@
   /* ---- itinerary ---- */
   .section-label{ font-size:11px; color:var(--accent); text-transform:uppercase; letter-spacing:.04em; padding:18px 18px 6px; font-weight:600; }
 
-  .suggest-row{ display:flex; align-items:center; gap:10px; padding:10px 18px; border-bottom:1px solid var(--border); }
-  .suggest-dot{ width:9px; height:9px; border-radius:50%; border:1.5px solid var(--border); flex-shrink:0; }
-  .suggest-name{ flex:1; font-size:15px; }
-  .suggest-actions{ display:flex; gap:6px; flex-shrink:0; }
-  .suggest-btn{
-    width:30px; height:30px; border-radius:8px; border:1px solid var(--border); background:var(--surface2);
-    color:var(--text); display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:14px;
-  }
-  .suggest-btn:hover{ border-color:var(--accent); }
-  .suggest-btn.been{ color:var(--accent); border-color:var(--accent); }
-
   /* ---- category settings screen ---- */
   .settings-list{ overflow-y:auto; }
   .settings-row{ display:flex; align-items:center; gap:12px; padding:12px 18px; border-bottom:1px solid var(--border); }
@@ -477,7 +466,7 @@
         <button type="button" class="photo-remove" id="photoRemoveBtn">&#10005;</button>
       </div>
       <button type="button" class="photo-add-btn" id="photoAddBtn">Add photo</button>
-      <input id="f-photo-file" type="file" accept="image/*" capture="environment">
+      <input id="f-photo-file" type="file" accept="image/*">
     </div>
     <div>
       <label>Notes</label>
@@ -554,7 +543,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const APP_VERSION = '1.25.0';
+const APP_VERSION = '1.26.0';
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
@@ -761,7 +750,7 @@ function loadTripDefinition(file, knownFiles){
   }
   const shell = localStorage.getItem('tripmap:shell:' + file);
   if (shell) return Promise.resolve(JSON.parse(shell));
-  return Promise.resolve({ name: file.replace(/\.json$/, ''), dates: '', center: [20, 0], zoom: 4, suggestions: {} });
+  return Promise.resolve({ name: file.replace(/\.json$/, ''), dates: '', center: [20, 0], zoom: 4 });
 }
 function tripKey(file){ return (file || '').replace(/\.json$/, ''); }
 function loadLocalPlaces(file){
@@ -1417,7 +1406,7 @@ function openCategory(key){
   const list = el('catList');
   list.innerHTML = '';
   if (!places.length){
-    list.innerHTML = `<div class="empty-hint">No ${cat.label.toLowerCase()} yet. Tap + on the map to add one, or pick a suggestion below.</div>`;
+    list.innerHTML = `<div class="empty-hint">No ${cat.label.toLowerCase()} yet. Tap + on the map to add one.</div>`;
   } else if (!filtered.length){
     list.innerHTML = `<div class="empty-hint">No matches for "${escapeHtml(categoryFilter)}".</div>`;
   } else {
@@ -1444,43 +1433,7 @@ function openCategory(key){
     });
   }
 
-  const suggestions = (currentTrip.suggestions && currentTrip.suggestions[key]) || [];
-  const addedIds = new Set(currentTrip.places.map(p => p.fromSuggestion).filter(Boolean));
-  const remaining = suggestions.filter(s => !addedIds.has(s.id)
-    && (!categoryFilter || s.name.toLowerCase().includes(categoryFilter.toLowerCase())));
-  if (remaining.length){
-    const label = document.createElement('div');
-    label.className = 'section-label';
-    label.textContent = `Suggested (${remaining.length})`;
-    list.appendChild(label);
-    remaining.forEach(s => {
-      const row = document.createElement('div');
-      row.className = 'suggest-row';
-      row.innerHTML = `
-        <span class="suggest-dot"></span>
-        <span class="suggest-name">${escapeHtml(s.name)}</span>
-        <div class="suggest-actions">
-          <button class="suggest-btn been" title="Mark as been">&#10003;</button>
-          <button class="suggest-btn" title="Add to want-to-go">+</button>
-        </div>`;
-      row.querySelector('.been').addEventListener('click', () => quickAddSuggestion(s, key, true));
-      row.querySelector('.suggest-actions > :last-child').addEventListener('click', () => quickAddSuggestion(s, key, false));
-      list.appendChild(row);
-    });
-  }
-
   showScreen('screen-category');
-}
-function quickAddSuggestion(s, key, visited){
-  currentTrip.places.push({
-    id: uid(), lat: s.lat, lng: s.lng, name: s.name, category: key,
-    visited, notes: '', photo: null, fromSuggestion: s.id,
-    addedBy: getUserName(), addedAt: Date.now()
-  });
-  saveTrip();
-  renderMarkers();
-  renderHome();
-  openCategory(key);
 }
 
 /* ---- itinerary ---- */
@@ -1797,7 +1750,6 @@ function setTrip(file, definition){
     zoom: definition.zoom || 4,
     bounds: definition.bounds || null,
     searchBounds: definition.searchBounds || definition.bounds || null,
-    suggestions: definition.suggestions || {},
     places: [],
     startDate: null,
     endDate: null,
@@ -2061,7 +2013,7 @@ async function boot(){
       }
     } catch (err) { /* fall back to default center/zoom */ }
 
-    const definition = { name: trimmed, dates: '', center, zoom, bounds, suggestions: {} };
+    const definition = { name: trimmed, dates: '', center, zoom, bounds };
     localStorage.setItem('tripmap:shell:' + file, JSON.stringify(definition));
     const localTrips = JSON.parse(localStorage.getItem(LOCAL_TRIPS_KEY) || '[]');
     if (!localTrips.includes(file)){ localTrips.push(file); localStorage.setItem(LOCAL_TRIPS_KEY, JSON.stringify(localTrips)); }
