@@ -56,6 +56,19 @@
     #editor, #flightEditor{ align-items:center; }
     #menu-box{ max-width:600px; }
   }
+  /* iPad landscape and wider windows have a lot more width to work with than
+     a single narrow card comfortably uses - widen the frame in a couple of
+     steps rather than leaving huge empty margins on either side. */
+  @media (min-width:1000px){
+    #app{ max-width:760px; }
+    #editor-box, #flightEditor-box{ max-width:760px; }
+    #menu-box{ max-width:700px; }
+  }
+  @media (min-width:1300px){
+    #app{ max-width:860px; }
+    #editor-box, #flightEditor-box{ max-width:860px; }
+    #menu-box{ max-width:760px; }
+  }
 
   /* ---- top bar (shared) ---- */
   .topbar{ display:flex; align-items:center; justify-content:flex-end; padding:calc(10px + env(safe-area-inset-top)) 18px 0; flex-shrink:0; }
@@ -543,7 +556,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const APP_VERSION = '1.26.0';
+const APP_VERSION = '1.27.0';
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
@@ -2140,6 +2153,22 @@ async function boot(){
   });
 
   handleSharedLaunch();
+
+  // Rotating an iPad (or resizing a Split View / desktop window) changes the
+  // map containers' pixel size without Leaflet knowing, since it only
+  // measures on demand - left alone, the tiles stay laid out for the old
+  // size until something else happens to touch the map. The full map keeps
+  // whatever the user panned to (invalidateSize alone preserves that); the
+  // hero map has no user-driven position to preserve, so it goes through
+  // updateHeroMap() to reassert the trip's own framing at the new size.
+  let resizeDebounce = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeDebounce);
+    resizeDebounce = setTimeout(() => {
+      if (map) map.invalidateSize();
+      if (heroMap) updateHeroMap();
+    }, 150);
+  });
 }
 
 boot();
