@@ -400,12 +400,15 @@
   .recap-bar-fill{ height:100%; background:var(--accent); border-radius:3px; }
   .recap-row .recap-count{ font-size:12px; color:var(--muted); width:44px; text-align:right; flex-shrink:0; }
 
-  /* ---- iPad landscape live overview panel ---- */
+  /* ---- iPad landscape live overview panel ----
+     1100px covers real iPad landscape widths (base/Air 11" ~1180pt, Pro 11"
+     ~1194pt, mini ~1133pt) with room to spare - 1300px was tuned against a
+     desktop browser window and never actually fired on an iPad. */
   #sidePanel{ display:none; }
-  @media (min-width:1300px) and (orientation:landscape){
+  @media (min-width:1100px) and (orientation:landscape){
     body{ gap:20px; }
     #sidePanel{
-      display:block; width:360px; height:calc(100dvh - 64px); margin:32px 0;
+      display:block; width:320px; height:calc(100dvh - 64px); margin:32px 0;
       border:1px solid var(--border); border-radius:20px; overflow:hidden;
       box-shadow:0 24px 60px rgba(0,0,0,.14); position:relative;
     }
