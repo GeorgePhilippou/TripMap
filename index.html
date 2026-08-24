@@ -248,6 +248,7 @@
     border-radius:8px; padding:10px; font-size:14px; font-family:inherit; margin-top:4px;
   }
   #editor-box textarea{ min-height:64px; resize:vertical; }
+  .flight-hint{ font-size:12px; color:var(--text); background:var(--accent-soft); border-radius:8px; padding:9px 11px; margin-top:2px; }
   .editor-row{ display:flex; gap:10px; }
   .editor-row > div{ flex:1; }
   .editor-actions{ display:flex; justify-content:space-between; margin-top:4px; gap:8px; }
@@ -450,6 +451,29 @@
       <label>Day (optional)</label>
       <input id="f-day" type="number" min="1" placeholder="e.g. 1">
     </div>
+    <div id="flightFieldsWrap" style="display:none;">
+      <div class="editor-row">
+        <div>
+          <label>Flight number</label>
+          <input id="f-flight-number" type="text" placeholder="e.g. BA632">
+        </div>
+        <div>
+          <label>Flight date</label>
+          <input id="f-flight-date" type="date">
+        </div>
+      </div>
+      <div class="editor-row">
+        <div>
+          <label>Departure time</label>
+          <input id="f-flight-depart" type="time">
+        </div>
+        <div>
+          <label>Arrival time</label>
+          <input id="f-flight-arrive" type="time">
+        </div>
+      </div>
+      <div id="flightArrivalHint" class="flight-hint" style="display:none;"></div>
+    </div>
     <div class="editor-row">
       <div>
         <a id="directionsBtn" class="btn" style="display:none; width:100%; text-align:center; text-decoration:none; box-sizing:border-box;" target="_blank" rel="noopener">Directions</a>
@@ -507,7 +531,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const APP_VERSION = '1.23.0';
+const APP_VERSION = '1.24.0';
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
@@ -1197,7 +1221,7 @@ function renderMarkers(){
       <div class="map-popup">
         ${thumb}
         <div class="map-popup-name">${escapeHtml(p.name)}</div>
-        <div class="map-popup-meta">${cat ? cat.label : p.category}${p.visited ? ' &middot; Been' : ''}</div>
+        <div class="map-popup-meta">${cat ? cat.label : p.category}${p.visited ? ' &middot; Been' : ''}${p.flightNumber ? ' &middot; ' + escapeHtml(flightSummary(p)) : ''}</div>
         <div class="map-popup-actions">
           <button class="map-popup-btn" onclick="window.openEditor('${p.id}')">Edit</button>
           <a class="map-popup-btn secondary" href="${directionsUrl(p.lat, p.lng)}" target="_blank" rel="noopener">Directions</a>
@@ -1320,6 +1344,7 @@ function renderPlaceRow(p){
   const div = document.createElement('div');
   div.className = 'place' + (p.visited ? ' visited' : '');
   const metaParts = [];
+  if (p.flightNumber) metaParts.push(escapeHtml(flightSummary(p)));
   if (p.notes) metaParts.push(escapeHtml(p.notes));
   if (userLatLng) metaParts.push(`${formatDistance(distanceKm(userLatLng[0], userLatLng[1], p.lat, p.lng))} away`);
   div.innerHTML = `
@@ -1481,6 +1506,26 @@ function renderItinerary(){
 function populateCategorySelect(){
   el('f-cat').innerHTML = CATEGORIES.map(c => `<option value="${c.key}">${c.label}</option>`).join('');
 }
+function updateFlightFieldsVisibility(){
+  el('flightFieldsWrap').style.display = el('f-cat').value === 'airport' ? 'block' : 'none';
+}
+function updateFlightHint(){
+  const date = el('f-flight-date').value;
+  const time = el('f-flight-depart').value;
+  const hint = el('flightArrivalHint');
+  const departDt = date && time ? new Date(`${date}T${time}`) : null;
+  if (!departDt || isNaN(departDt)){ hint.style.display = 'none'; return; }
+  const arriveBy = new Date(departDt.getTime() - 3 * 60 * 60 * 1000);
+  const fmt = d => d.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+  hint.textContent = `Recommended: arrive at the airport by ${fmt(arriveBy)} — 3h before departure`;
+  hint.style.display = 'block';
+}
+function flightSummary(p){
+  if (!p.flightNumber) return '';
+  const parts = [p.flightNumber];
+  if (p.flightDeparture) parts.push(p.flightDeparture + (p.flightArrival ? ` → ${p.flightArrival}` : ''));
+  return parts.join(' · ');
+}
 function updatePhotoPreview(){
   if (pendingPhoto){
     el('photoPreviewWrap').style.display = 'block';
@@ -1504,6 +1549,10 @@ function openEditor(id, latlng){
     el('f-visited').value = '0';
     el('f-day').value = '';
     el('f-notes').value = '';
+    el('f-flight-number').value = '';
+    el('f-flight-date').value = '';
+    el('f-flight-depart').value = '';
+    el('f-flight-arrive').value = '';
     pendingPhoto = null;
     if (pendingLatLng){ lat = pendingLatLng.lat; lng = pendingLatLng.lng; }
   } else {
@@ -1513,9 +1562,15 @@ function openEditor(id, latlng){
     el('f-visited').value = p.visited ? '1' : '0';
     el('f-day').value = p.day || '';
     el('f-notes').value = p.notes || '';
+    el('f-flight-number').value = p.flightNumber || '';
+    el('f-flight-date').value = p.flightDate || '';
+    el('f-flight-depart').value = p.flightDeparture || '';
+    el('f-flight-arrive').value = p.flightArrival || '';
     pendingPhoto = p.photo || null;
     lat = p.lat; lng = p.lng;
   }
+  updateFlightFieldsVisibility();
+  updateFlightHint();
   const dirBtn = el('directionsBtn');
   if (lat != null && lng != null){
     dirBtn.href = directionsUrl(lat, lng);
@@ -1553,6 +1608,10 @@ function saveEditor(){
     visited: el('f-visited').value === '1',
     day: dayVal ? parseInt(dayVal, 10) : null,
     notes: el('f-notes').value.trim(),
+    flightNumber: el('f-flight-number').value.trim() || null,
+    flightDate: el('f-flight-date').value || null,
+    flightDeparture: el('f-flight-depart').value || null,
+    flightArrival: el('f-flight-arrive').value || null,
     photo: pendingPhoto
   };
   if (editingId){
@@ -1879,6 +1938,9 @@ async function boot(){
   el('cancelBtn').addEventListener('click', closeEditor);
   el('deleteBtn').addEventListener('click', deletePlace);
   el('adjustLocationBtn').addEventListener('click', () => { if (editingId) startRepositioning(editingId); });
+  el('f-cat').addEventListener('change', updateFlightFieldsVisibility);
+  el('f-flight-date').addEventListener('input', updateFlightHint);
+  el('f-flight-depart').addEventListener('input', updateFlightHint);
   el('editor').addEventListener('click', e => { if (e.target.id === 'editor') closeEditor(); });
 
   el('exportItem').addEventListener('click', () => {
