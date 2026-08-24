@@ -444,6 +444,7 @@
         <button type="button" id="shareBtn" class="btn" style="display:none; width:100%;">Share</button>
       </div>
     </div>
+    <button type="button" id="adjustLocationBtn" class="btn" style="display:none; width:100%;">Adjust pin location</button>
     <div>
       <label>Photo</label>
       <div id="photoPreviewWrap" class="photo-preview-wrap" style="display:none;">
@@ -491,7 +492,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const APP_VERSION = '1.18.0';
+const APP_VERSION = '1.19.0';
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
@@ -536,7 +537,7 @@ let map, markers = {}, currentTrip = null, currentTripFile = null, editingId = n
 let heroMap, heroMarkersLayer;
 let searchMarkers = [], lastSearchResults = [], lastSearchQuery = '', searchDebounceTimer = null;
 let activeCategory = null, pendingPhoto = null, placing = false;
-let sortByDistance = false, lastDeleted = null, undoTimer = null;
+let sortByDistance = false, lastDeleted = null, undoTimer = null, repositioningId = null;
 
 const el = id => document.getElementById(id);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
@@ -826,8 +827,19 @@ function stopPlacing(){
   el('mapAddBtn').style.display = 'flex';
   el('legendBtn').style.display = 'flex';
   el('search').closest('.search-wrap').style.display = 'block';
+  el('placeConfirmBtn').textContent = 'Add place here';
   const zoomCtrl = document.querySelector('#map .leaflet-control-zoom');
   if (zoomCtrl) zoomCtrl.style.display = '';
+}
+function startRepositioning(id){
+  const p = currentTrip.places.find(pl => pl.id === id);
+  if (!p) return;
+  repositioningId = id;
+  closeEditor();
+  showScreen('screen-map');
+  map.setView([p.lat, p.lng], Math.max(map.getZoom(), 16));
+  startPlacing();
+  el('placeConfirmBtn').textContent = 'Move pin here';
 }
 
 function getTripViewbox(){
@@ -862,6 +874,13 @@ function selectSearchResult(r){
   map.flyTo([lat, lon], 16);
   openEditor(null, { lat, lng: lon });
   el('f-name').value = r.display_name.split(',')[0];
+}
+function cleanSearchText(raw){
+  // Maps apps often copy an address as multiple lines (name / street / city /
+  // country). A single-line <input> silently drops the line breaks on paste,
+  // jamming everything into one unreadable word and breaking geocoding -
+  // turn line breaks into comma separators instead, like a normal address.
+  return (raw || '').replace(/[\r\n]+/g, ', ').replace(/\s{2,}/g, ' ').trim();
 }
 function parseLocationInput(raw){
   const text = (raw || '').trim();
@@ -1283,6 +1302,7 @@ function openEditor(id, latlng){
     shareBtn.style.display = 'none';
     shareBtn.onclick = null;
   }
+  el('adjustLocationBtn').style.display = !isNew ? 'block' : 'none';
   updatePhotoPreview();
   el('f-photo-file').value = '';
   el('editor').classList.add('open');
@@ -1451,14 +1471,32 @@ async function boot(){
   populateTripSelect(files, startFile);
   setTrip(startFile, definition);
 
-  el('mapBackBtn').addEventListener('click', () => { stopPlacing(); clearSearchResults(); el('search').value = ''; showScreen('screen-home'); });
+  el('mapBackBtn').addEventListener('click', () => { stopPlacing(); repositioningId = null; clearSearchResults(); el('search').value = ''; showScreen('screen-home'); });
   el('mapAddBtn').addEventListener('click', startPlacing);
   el('legendBtn').addEventListener('click', () => el('mapLegend').classList.toggle('show'));
-  el('placeCancelBtn').addEventListener('click', stopPlacing);
+  el('placeCancelBtn').addEventListener('click', () => {
+    const wasRepositioning = repositioningId;
+    stopPlacing();
+    repositioningId = null;
+    if (wasRepositioning) openEditor(wasRepositioning);
+  });
   el('placeConfirmBtn').addEventListener('click', () => {
     const c = map.getCenter();
+    const wasRepositioning = repositioningId;
     stopPlacing();
-    openEditor(null, c);
+    repositioningId = null;
+    if (wasRepositioning){
+      const p = currentTrip.places.find(pl => pl.id === wasRepositioning);
+      if (p){
+        p.lat = c.lat; p.lng = c.lng;
+        saveTrip();
+        renderMarkers();
+        renderHome();
+        openEditor(p.id);
+      }
+    } else {
+      openEditor(null, c);
+    }
   });
   el('catBackBtn').addEventListener('click', () => { activeCategory = null; showScreen('screen-home'); });
   el('heroCard').addEventListener('click', () => showScreen('screen-map'));
@@ -1601,6 +1639,7 @@ async function boot(){
   el('saveBtn').addEventListener('click', saveEditor);
   el('cancelBtn').addEventListener('click', closeEditor);
   el('deleteBtn').addEventListener('click', deletePlace);
+  el('adjustLocationBtn').addEventListener('click', () => { if (editingId) startRepositioning(editingId); });
   el('editor').addEventListener('click', e => { if (e.target.id === 'editor') closeEditor(); });
 
   el('exportItem').addEventListener('click', () => {
@@ -1647,13 +1686,28 @@ async function boot(){
     const q = e.target.value.trim();
     searchDebounceTimer = setTimeout(() => runSearch(q), 350);
   });
-  el('search').addEventListener('paste', () => {
+  el('search').addEventListener('paste', e => {
+    // A single-line <input> silently deletes line breaks the instant pasted
+    // text is assigned to .value (no space left behind), so by the time any
+    // deferred handler reads el('search').value the line boundaries are
+    // already gone. Read the raw clipboard text directly from the paste
+    // event instead, while it's still intact, and insert the cleaned
+    // version ourselves.
+    const raw = (e.clipboardData || window.clipboardData) ? (e.clipboardData || window.clipboardData).getData('text/plain') : '';
+    const cleaned = cleanSearchText(raw || el('search').value);
+    if (raw){
+      e.preventDefault();
+      el('search').value = cleaned;
+    }
     setTimeout(() => {
-      const q = el('search').value.trim();
-      const parsed = parseLocationInput(q);
+      el('search').value = cleaned;
+      const parsed = parseLocationInput(cleaned);
       if (parsed && (parsed.lat != null || parsed.unresolved)){
         clearTimeout(searchDebounceTimer);
         handleParsedLocation(parsed);
+      } else if (cleaned){
+        clearTimeout(searchDebounceTimer);
+        searchDebounceTimer = setTimeout(() => runSearch(cleaned), 150);
       }
     }, 0);
   });
@@ -1661,17 +1715,18 @@ async function boot(){
     if (e.key !== 'Enter') return;
     e.preventDefault();
     clearTimeout(searchDebounceTimer);
-    const q = e.target.value.trim();
+    const q = cleanSearchText(e.target.value);
     if (!q) return;
+    el('search').value = q;
     const parsed = parseLocationInput(q);
     if (handleParsedLocation(parsed)) return;
     if (lastSearchQuery === q && lastSearchResults.length){
-      selectSearchResult(lastSearchResults[0]);
-      return;
+      if (lastSearchResults.length === 1) selectSearchResult(lastSearchResults[0]);
+      return; // multiple candidates - leave the dropdown open so the right one can be tapped
     }
     await runSearch(q);
-    if (lastSearchResults.length) selectSearchResult(lastSearchResults[0]);
-    else alert('No results for "' + q + '"');
+    if (lastSearchResults.length === 1) selectSearchResult(lastSearchResults[0]);
+    else if (!lastSearchResults.length) alert('No results for "' + q + '"');
   });
 
   handleSharedLaunch();
