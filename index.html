@@ -72,12 +72,23 @@
   .eyebrow{ font-size:12px; color:var(--muted); letter-spacing:.06em; text-transform:uppercase; margin-bottom:4px; font-weight:600; }
   h1.trip-title{ font-family:'Fraunces',serif; font-weight:500; font-size:clamp(26px,7.5vh,34px); margin:0 0 2px; letter-spacing:-.01em; line-height:1.1; }
   .trip-sub{ color:var(--muted); font-size:14px; }
-  .home-header{ padding:6px 18px 0; flex-shrink:0; }
+  .home-header{ padding:4px 18px 0; flex-shrink:0; }
+  .progress-track{ height:4px; background:var(--surface2); border-radius:3px; margin-top:5px; overflow:hidden; display:none; }
+  .progress-fill{ height:100%; width:0; background:var(--accent); border-radius:3px; transition:width .3s ease; }
+  .info-strip{ display:flex; flex-wrap:wrap; gap:5px; margin-top:5px; }
+  .info-pill{
+    background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:4px 8px;
+    font-size:11px; color:var(--text); display:flex; align-items:center; gap:5px; max-width:100%;
+  }
+  .info-pill svg{ width:14px; height:14px; flex-shrink:0; color:var(--muted); }
+  .info-pill span{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .info-pill.clickable{ cursor:pointer; }
+  .info-pill.clickable:hover{ border-color:var(--accent); }
 
   .hero{
-    margin:12px 18px 0; border-radius:16px; overflow:hidden; border:1px solid var(--border);
-    position:relative; height:clamp(90px,15vh,150px); background:linear-gradient(160deg,var(--surface2),var(--surface));
-    display:flex; align-items:flex-end; padding:12px; cursor:pointer; flex-shrink:0;
+    margin:8px 18px 0; border-radius:16px; overflow:hidden; border:1px solid var(--border);
+    position:relative; height:clamp(64px,10vh,140px); background:linear-gradient(160deg,var(--surface2),var(--surface));
+    display:flex; align-items:flex-end; padding:8px; cursor:pointer; flex-shrink:0;
     box-shadow:0 1px 3px rgba(38,42,28,.05);
   }
   .hero-map{ position:absolute; inset:0; z-index:0; pointer-events:none; }
@@ -87,23 +98,17 @@
   .hero-pill .count{ color:var(--muted); font-size:11px; }
   .hero-empty{ color:var(--muted); font-size:13px; }
 
-  .grid{ display:grid; grid-template-columns:1fr 1fr; grid-template-rows:repeat(3,minmax(0,1fr)); gap:8px; margin:10px 18px 0; flex:1; min-height:0; }
+  .grid{ display:grid; grid-template-columns:1fr 1fr; grid-template-rows:repeat(3,minmax(0,1fr)); gap:6px; margin:8px 18px 0; flex:1; min-height:0; }
   .card{
     background:var(--surface); border:1px solid var(--border); border-radius:14px;
-    padding:10px 14px; display:flex; flex-direction:column; justify-content:center; gap:4px; cursor:pointer; min-height:0;
+    padding:7px 12px; display:flex; flex-direction:column; justify-content:center; gap:2px; cursor:pointer; min-height:0;
     box-shadow:0 1px 3px rgba(38,42,28,.04); overflow:hidden;
   }
   .card:hover{ border-color:var(--accent); }
-  .cat-icon{ width:30px; height:30px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:15px; flex-shrink:0; }
-  .card-title{ font-size:15px; font-weight:600; line-height:1.15; }
-  .card-count{ font-size:13px; color:var(--muted); line-height:1.15; }
+  .cat-icon{ width:26px; height:26px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:15px; flex-shrink:0; }
+  .card-title{ font-size:14px; font-weight:600; line-height:1.15; }
+  .card-count{ font-size:12px; color:var(--muted); line-height:1.15; }
   .chev{ color:var(--muted); font-size:18px; }
-
-  .primary-btn{
-    margin:12px 18px 0; background:var(--accent); color:var(--accent-ink); border:none;
-    border-radius:12px; padding:13px; font-weight:600; font-size:14px; font-family:inherit; cursor:pointer; flex-shrink:0;
-  }
-  .primary-btn:hover{ filter:brightness(1.05); }
 
   /* ---- category / list screen ---- */
   .cat-header{ display:flex; align-items:center; gap:10px; padding:calc(10px + env(safe-area-inset-top)) 18px 0; flex-shrink:0; }
@@ -322,6 +327,8 @@
       <div class="eyebrow" id="tripDates">Trip</div>
       <h1 class="trip-title" id="tripName">Trip</h1>
       <div class="trip-sub" id="tripSummary">0 places saved</div>
+      <div class="progress-track" id="progressTrack"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="info-strip" id="infoStrip"></div>
     </div>
 
     <div class="hero" id="heroCard">
@@ -331,8 +338,6 @@
     </div>
 
     <div class="grid" id="categoryGrid"></div>
-
-    <button class="primary-btn" id="viewMapBtn">View full map</button>
   </section>
 
   <!-- CATEGORY LIST -->
@@ -422,14 +427,16 @@
         </select>
       </div>
     </div>
+    <div>
+      <label>Day (optional)</label>
+      <input id="f-day" type="number" min="1" placeholder="e.g. 1">
+    </div>
     <div class="editor-row">
       <div>
-        <label>Day (optional)</label>
-        <input id="f-day" type="number" min="1" placeholder="e.g. 1">
+        <a id="directionsBtn" class="btn" style="display:none; width:100%; text-align:center; text-decoration:none; box-sizing:border-box;" target="_blank" rel="noopener">Directions</a>
       </div>
       <div>
-        <label>&nbsp;</label>
-        <a id="directionsBtn" class="btn" style="display:none; width:100%; margin-top:4px; text-align:center; text-decoration:none; box-sizing:border-box;" target="_blank" rel="noopener">Directions</a>
+        <button type="button" id="shareBtn" class="btn" style="display:none; width:100%;">Share</button>
       </div>
     </div>
     <div>
@@ -462,9 +469,11 @@
     <div style="padding:0 14px 10px;"><select id="tripSelect"></select></div>
     <div class="menu-item" id="newTripItem"><span>New trip</span><span>+</span></div>
     <div class="menu-item" id="itineraryItem"><span>Itinerary</span><span>&#8250;</span></div>
+    <div class="menu-item" id="tripDatesItem"><span>Trip dates</span><span>&#8250;</span></div>
     <div class="menu-item" id="catSettingsItem"><span>Homepage categories</span><span>&#8250;</span></div>
     <div class="menu-label">Sharing</div>
     <div class="menu-item" id="roomItem"><span>Sync room</span><span id="roomStatus">&#8250;</span></div>
+    <div class="menu-item" id="userNameItem"><span>Your name</span><span id="userNameStatus">&#8250;</span></div>
     <div class="menu-label">Data</div>
     <div class="menu-item" id="exportItem"><span>Export JSON</span><span>&#8595;</span></div>
     <div class="menu-item" id="importItem"><span>Import JSON</span><span>&#8593;</span></div>
@@ -477,7 +486,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const APP_VERSION = '1.16.0';
+const APP_VERSION = '1.17.0';
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
@@ -491,7 +500,7 @@ const FIREBASE_CONFIG = {
 const DEFAULT_ROOM = 'philippou-megan-8x4q';
 const ROOM_KEY = 'tripmap:room';
 const LOCAL_TRIPS_KEY = 'tripmap:localtrips';
-let fbApp, fbDb, fbRef;
+let fbApp, fbDb, fbRef, fbDatesRef;
 try {
   fbApp = firebase.initializeApp(FIREBASE_CONFIG);
   fbDb = firebase.database();
@@ -546,6 +555,87 @@ function distanceKm(lat1, lng1, lat2, lng2){
 function formatDistance(km){
   return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`;
 }
+const USER_NAME_KEY = 'tripmap:username';
+function getUserName(){
+  let name = (localStorage.getItem(USER_NAME_KEY) || '').trim();
+  if (!name){
+    name = ((prompt('What should we call you? (shown when you add places)') || '').trim()) || 'Someone';
+    localStorage.setItem(USER_NAME_KEY, name);
+  }
+  return name;
+}
+function formatRelativeTime(ts){
+  if (!ts) return '';
+  const min = Math.floor((Date.now() - ts) / 60000);
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day}d ago`;
+  return `${Math.floor(day / 7)}w ago`;
+}
+function computeCountdownText(start, end){
+  if (!start) return null;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const startD = new Date(start + 'T00:00:00');
+  const endD = end ? new Date(end + 'T00:00:00') : startD;
+  const oneDay = 86400000;
+  if (today < startD){
+    const days = Math.round((startD - today) / oneDay);
+    return days === 1 ? '1 day to go' : `${days} days to go`;
+  }
+  if (today <= endD){
+    const day = Math.round((today - startD) / oneDay) + 1;
+    const total = Math.round((endD - startD) / oneDay) + 1;
+    return total > 1 ? `Day ${day} of ${total}` : 'Today';
+  }
+  return 'Trip complete';
+}
+function weatherIcon(code){
+  if (code === 0) return svgIcon('<circle cx="10" cy="10" r="4"/><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.5 4.5l1.4 1.4M14.1 14.1l1.4 1.4M4.5 15.5l1.4-1.4M14.1 5.9l1.4-1.4"/>');
+  if ([1, 2, 3].includes(code)) return svgIcon('<path d="M5 15a3.5 3.5 0 0 1 .3-7A5 5 0 0 1 15 9a3 3 0 0 1-1 5.9H5Z"/>');
+  if ([45, 48].includes(code)) return svgIcon('<path d="M3 8h14M3 12h14M3 16h10"/>');
+  if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(code)) return svgIcon('<path d="M5 12a3.5 3.5 0 0 1 .3-7A5 5 0 0 1 15 6a3 3 0 0 1-1 5.9H5Z"/><path d="M6 15v2M10 15v2M14 15v2"/>');
+  if ([71, 73, 75, 77, 85, 86].includes(code)) return svgIcon('<path d="M5 12a3.5 3.5 0 0 1 .3-7A5 5 0 0 1 15 6a3 3 0 0 1-1 5.9H5Z"/><path d="M7 16l-.7.7M7 16l.7.7M13 16l-.7.7M13 16l.7.7M10 16v2"/>');
+  if ([95, 96, 99].includes(code)) return svgIcon('<path d="M5 11a3.5 3.5 0 0 1 .3-7A5 5 0 0 1 15 5a3 3 0 0 1-1 5.9H5Z"/><path d="M10 12l-2 4h3l-1 3"/>');
+  return svgIcon('<path d="M5 12a3.5 3.5 0 0 1 .3-7A5 5 0 0 1 15 6a3 3 0 0 1-1 5.9H5Z"/>');
+}
+let weatherData = null;
+async function fetchWeather(){
+  weatherData = null;
+  if (!currentTrip || !currentTrip.center) return;
+  const [lat, lng] = currentTrip.center;
+  const tripFile = currentTripFile;
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,weather_code&timezone=auto&forecast_days=1`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (tripFile !== currentTripFile) return;
+    weatherData = {
+      current: Math.round(data.current.temperature_2m),
+      code: data.current.weather_code,
+      max: Math.round(data.daily.temperature_2m_max[0]),
+      min: Math.round(data.daily.temperature_2m_min[0])
+    };
+  } catch (err) { weatherData = null; }
+  if (tripFile === currentTripFile) renderHome();
+}
+function sharePlace(p){
+  const cat = CAT_BY_KEY[p.category];
+  const text = `${p.name}${cat ? ' (' + cat.label + ')' : ''}${p.notes ? '\n' + p.notes : ''}`;
+  const url = `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}`;
+  if (navigator.share){
+    navigator.share({ title: p.name, text, url }).catch(() => {});
+  } else if (navigator.clipboard){
+    navigator.clipboard.writeText(`${text}\n${url}`).then(
+      () => alert("Copied to clipboard — sharing isn't supported on this browser."),
+      () => alert(url)
+    );
+  } else {
+    alert(url);
+  }
+}
 
 function loadTripList(){
   return fetch('trips/index.json', { cache: 'no-store' }).then(r => r.json()).catch(() => ['cyprus.json'])
@@ -575,6 +665,17 @@ function loadVisibleCategories(file){
 }
 function saveVisibleCategories(file, arr){
   localStorage.setItem('tripmap:visible:' + file, JSON.stringify(arr));
+}
+function loadLocalDates(file){
+  const saved = localStorage.getItem('tripmap:dates:' + file);
+  return saved ? JSON.parse(saved) : { start: null, end: null };
+}
+function saveDates(){
+  const dates = { start: currentTrip.startDate || null, end: currentTrip.endDate || null };
+  localStorage.setItem('tripmap:dates:' + currentTripFile, JSON.stringify(dates));
+  if (fbDb){
+    fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(currentTripFile) + '/dates').set(dates);
+  }
 }
 function saveTrip(){
   const clean = JSON.parse(JSON.stringify(currentTrip.places));
@@ -825,12 +926,32 @@ function renderMarkers(){
 /* ---- home ---- */
 function renderHome(){
   el('tripName').textContent = currentTrip.name || 'Trip';
-  el('tripDates').textContent = currentTrip.dates || 'Trip';
+  const countdown = computeCountdownText(currentTrip.startDate, currentTrip.endDate);
+  el('tripDates').textContent = countdown || currentTrip.dates || 'Trip';
   const total = currentTrip.places.length;
   const visited = currentTrip.places.filter(p => p.visited).length;
   el('tripSummary').textContent = total
     ? `${total} place${total===1?'':'s'} saved · ${visited} visited`
     : 'No places yet';
+  if (total){
+    el('progressTrack').style.display = 'block';
+    el('progressFill').style.width = Math.round(visited / total * 100) + '%';
+  } else {
+    el('progressTrack').style.display = 'none';
+  }
+
+  const pills = [];
+  if (weatherData){
+    pills.push(`<div class="info-pill">${weatherIcon(weatherData.code)}<span>${weatherData.current}&deg; &middot; H:${weatherData.max}&deg; L:${weatherData.min}&deg;</span></div>`);
+  }
+  const recent = currentTrip.places.filter(p => p.addedAt).sort((a, b) => b.addedAt - a.addedAt)[0];
+  if (recent){
+    pills.push(`<div class="info-pill clickable" id="recentActivityPill"><span>${escapeHtml(recent.addedBy || 'Someone')} added <b>${escapeHtml(recent.name)}</b> &middot; ${formatRelativeTime(recent.addedAt)}</span></div>`);
+  }
+  el('infoStrip').innerHTML = pills.join('');
+  if (recent){
+    el('recentActivityPill').addEventListener('click', () => openEditor(recent.id));
+  }
 
   const next = currentTrip.places.find(p => !p.visited);
   const heroPhoto = el('heroPhoto');
@@ -972,7 +1093,8 @@ function openCategory(key){
 function quickAddSuggestion(s, key, visited){
   currentTrip.places.push({
     id: uid(), lat: s.lat, lng: s.lng, name: s.name, category: key,
-    visited, notes: '', photo: null, fromSuggestion: s.id
+    visited, notes: '', photo: null, fromSuggestion: s.id,
+    addedBy: getUserName(), addedAt: Date.now()
   });
   saveTrip();
   renderMarkers();
@@ -1062,6 +1184,14 @@ function openEditor(id, latlng){
   } else {
     dirBtn.style.display = 'none';
   }
+  const shareBtn = el('shareBtn');
+  if (!isNew && lat != null && lng != null){
+    shareBtn.style.display = 'block';
+    shareBtn.onclick = () => sharePlace(currentTrip.places.find(pl => pl.id === editingId));
+  } else {
+    shareBtn.style.display = 'none';
+    shareBtn.onclick = null;
+  }
   updatePhotoPreview();
   el('f-photo-file').value = '';
   el('editor').classList.add('open');
@@ -1088,7 +1218,7 @@ function saveEditor(){
   if (editingId){
     Object.assign(currentTrip.places.find(p => p.id === editingId), data);
   } else if (pendingLatLng){
-    currentTrip.places.push({ id: uid(), lat: pendingLatLng.lat, lng: pendingLatLng.lng, ...data });
+    currentTrip.places.push({ id: uid(), lat: pendingLatLng.lat, lng: pendingLatLng.lng, addedBy: getUserName(), addedAt: Date.now(), ...data });
   }
   saveTrip();
   renderMarkers();
@@ -1136,6 +1266,7 @@ function deletePlace(){
 /* ---- trips ---- */
 function setTrip(file, definition){
   if (fbRef) { fbRef.off(); fbRef = null; }
+  if (fbDatesRef) { fbDatesRef.off(); fbDatesRef = null; }
   clearSearchResults();
   el('search').value = '';
   currentTripFile = file;
@@ -1148,12 +1279,39 @@ function setTrip(file, definition){
     searchBounds: definition.searchBounds || definition.bounds || null,
     suggestions: definition.suggestions || {},
     places: [],
+    startDate: null,
+    endDate: null,
     visibleCategories: loadVisibleCategories(file)
   };
   if (currentTrip.bounds) map.fitBounds(currentTrip.bounds, { maxZoom: 15 });
   else map.setView(currentTrip.center, currentTrip.zoom);
   renderMarkers();
   renderHome();
+  fetchWeather();
+
+  if (fbDb){
+    fbDatesRef = fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(file) + '/dates');
+    fbDatesRef.on('value', snap => {
+      if (file !== currentTripFile) return;
+      const remote = snap.val();
+      if (remote && typeof remote === 'object'){
+        currentTrip.startDate = remote.start || null;
+        currentTrip.endDate = remote.end || null;
+      } else {
+        const local = loadLocalDates(file);
+        currentTrip.startDate = local.start;
+        currentTrip.endDate = local.end;
+        fbDatesRef.set({ start: currentTrip.startDate, end: currentTrip.endDate });
+      }
+      localStorage.setItem('tripmap:dates:' + file, JSON.stringify({ start: currentTrip.startDate, end: currentTrip.endDate }));
+      renderHome();
+    });
+  } else {
+    const local = loadLocalDates(file);
+    currentTrip.startDate = local.start;
+    currentTrip.endDate = local.end;
+    renderHome();
+  }
 
   if (fbDb){
     fbRef = fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(file) + '/places');
@@ -1205,7 +1363,6 @@ async function boot(){
   populateTripSelect(files, startFile);
   setTrip(startFile, definition);
 
-  el('viewMapBtn').addEventListener('click', () => showScreen('screen-map'));
   el('mapBackBtn').addEventListener('click', () => { stopPlacing(); clearSearchResults(); el('search').value = ''; showScreen('screen-home'); });
   el('mapAddBtn').addEventListener('click', startPlacing);
   el('legendBtn').addEventListener('click', () => el('mapLegend').classList.toggle('show'));
@@ -1232,6 +1389,33 @@ async function boot(){
     showScreen('screen-itinerary');
   });
   el('itineraryBackBtn').addEventListener('click', () => showScreen('screen-home'));
+
+  el('tripDatesItem').addEventListener('click', () => {
+    const startInput = prompt('Trip start date (YYYY-MM-DD), or leave blank to clear:', currentTrip.startDate || '');
+    if (startInput === null) return;
+    const start = startInput.trim();
+    if (start && !/^\d{4}-\d{2}-\d{2}$/.test(start)){ alert('Please use YYYY-MM-DD format.'); return; }
+    const endInput = prompt('Trip end date (YYYY-MM-DD), or leave blank for a single day:', currentTrip.endDate || start);
+    if (endInput === null) return;
+    const end = endInput.trim();
+    if (end && !/^\d{4}-\d{2}-\d{2}$/.test(end)){ alert('Please use YYYY-MM-DD format.'); return; }
+    currentTrip.startDate = start || null;
+    currentTrip.endDate = end || start || null;
+    saveDates();
+    renderHome();
+    el('menu').classList.remove('open');
+  });
+
+  el('userNameStatus').textContent = localStorage.getItem(USER_NAME_KEY) || 'Not set';
+  el('userNameItem').addEventListener('click', () => {
+    const current = localStorage.getItem(USER_NAME_KEY) || '';
+    const next = prompt('What should we call you? (shown when you add places)', current);
+    if (next === null) return;
+    const trimmed = next.trim();
+    if (trimmed) localStorage.setItem(USER_NAME_KEY, trimmed);
+    el('userNameStatus').textContent = localStorage.getItem(USER_NAME_KEY) || 'Not set';
+    el('menu').classList.remove('open');
+  });
 
   el('toastUndoBtn').addEventListener('click', undoDelete);
 
