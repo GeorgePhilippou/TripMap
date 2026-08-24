@@ -1,0 +1,15 @@
+{
+  "name": "Trip Map",
+  "short_name": "TripMap",
+  "description": "Plan and share trip places, synced in real time.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F3F0E2",
+  "theme_color": "#5D7350",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

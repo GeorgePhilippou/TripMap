@@ -7,6 +7,12 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>Trip Map</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<meta name="theme-color" content="#5D7350">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Trip Map">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -113,8 +119,9 @@
   }
   .cat-banner-icon{ position:absolute; right:-14px; bottom:-22px; opacity:.3; color:#fff; pointer-events:none; }
   .cat-banner-icon svg{ width:120px; height:120px; }
-  .cat-title-row{ padding:14px 18px 0; flex-shrink:0; }
-  .cat-title-row h2{ font-family:'Fraunces',serif; font-weight:500; font-size:25px; margin:0; }
+  .cat-title-row{ padding:14px 18px 0; flex-shrink:0; display:flex; align-items:center; gap:10px; }
+  .cat-title-row h2{ font-family:'Fraunces',serif; font-weight:500; font-size:25px; margin:0; flex:1; }
+  .icon-btn.active{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
   .place-list{ margin-top:8px; }
   .place{ padding:14px 18px; border-bottom:1px solid var(--border); cursor:pointer; display:flex; align-items:center; gap:12px; }
   .place:hover{ background:var(--surface); }
@@ -126,6 +133,9 @@
   .place-notes{ font-size:12px; color:var(--muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .place-visited-tag{ font-size:11px; color:var(--muted); flex-shrink:0; }
   .empty-hint{ padding:24px 18px; color:var(--muted); font-size:13px; line-height:1.6; text-align:center; }
+
+  /* ---- itinerary ---- */
+  .itinerary-day-label{ font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; padding:18px 18px 6px; font-weight:600; }
 
   .suggest-label{ font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; padding:18px 18px 6px; }
   .suggest-row{ display:flex; align-items:center; gap:10px; padding:10px 18px; border-bottom:1px solid var(--border); }
@@ -270,10 +280,13 @@
   .leaflet-popup-close-button{ color:var(--muted) !important; }
   .map-popup-name{ font-weight:600; font-size:14px; }
   .map-popup-meta{ font-size:12px; color:var(--muted); margin-top:2px; text-transform:capitalize; }
-  .map-popup-edit{
-    margin-top:8px; width:100%; background:var(--accent); color:var(--accent-ink); border:none;
+  .map-popup-actions{ display:flex; gap:6px; margin-top:8px; }
+  .map-popup-btn{
+    flex:1; background:var(--accent); color:var(--accent-ink); border:none;
     border-radius:8px; padding:7px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit;
+    text-align:center; text-decoration:none; display:block;
   }
+  .map-popup-btn.secondary{ background:var(--surface2); color:var(--text); border:1px solid var(--border); }
 
   /* ---- map legend ---- */
   .map-legend{
@@ -284,6 +297,17 @@
   .map-legend.show{ display:block; }
   .legend-row{ display:flex; align-items:center; gap:8px; padding:3px 0; font-size:12px; }
   .legend-dot{ width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+
+  /* ---- undo toast ---- */
+  .toast{
+    position:absolute; left:14px; right:14px; bottom:calc(14px + env(safe-area-inset-bottom));
+    background:var(--text); color:var(--surface); border-radius:12px; padding:12px 14px;
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    box-shadow:0 8px 24px rgba(0,0,0,.25); z-index:900; font-size:13px;
+    transform:translateY(120%); opacity:0; transition:transform .2s ease, opacity .2s ease; pointer-events:none;
+  }
+  .toast.show{ transform:translateY(0); opacity:1; pointer-events:auto; }
+  .toast button{ background:none; border:none; color:inherit; font-weight:700; font-size:13px; cursor:pointer; flex-shrink:0; text-decoration:underline; font-family:inherit; }
 </style>
 </head>
 <body>
@@ -319,8 +343,20 @@
     </div>
     <div class="cat-title-row">
       <h2 id="catTitle">Category</h2>
+      <button class="icon-btn" id="catSortBtn" title="Sort by distance">
+        <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="3"/><path d="M10 1.5v3M10 15.5v3M1.5 10h3M15.5 10h3"/></svg>
+      </button>
     </div>
     <div class="place-list" id="catList"></div>
+  </section>
+
+  <!-- ITINERARY -->
+  <section id="screen-itinerary" class="screen">
+    <div class="cat-header">
+      <button class="icon-btn" id="itineraryBackBtn">&#8592;</button>
+      <h2>Itinerary</h2>
+    </div>
+    <div class="place-list" id="itineraryList"></div>
   </section>
 
   <!-- FULL MAP -->
@@ -358,6 +394,11 @@
     <div class="settings-list" id="catSettingsList"></div>
   </section>
 
+  <div id="toast" class="toast">
+    <span id="toastText"></span>
+    <button id="toastUndoBtn" type="button">Undo</button>
+  </div>
+
 </div>
 
 <!-- EDITOR -->
@@ -379,6 +420,16 @@
           <option value="0">Not yet</option>
           <option value="1">Been</option>
         </select>
+      </div>
+    </div>
+    <div class="editor-row">
+      <div>
+        <label>Day (optional)</label>
+        <input id="f-day" type="number" min="1" placeholder="e.g. 1">
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <a id="directionsBtn" class="btn" style="display:none; width:100%; margin-top:4px; text-align:center; text-decoration:none; box-sizing:border-box;" target="_blank" rel="noopener">Directions</a>
       </div>
     </div>
     <div>
@@ -410,6 +461,7 @@
     <div class="menu-label">Trip</div>
     <div style="padding:0 14px 10px;"><select id="tripSelect"></select></div>
     <div class="menu-item" id="newTripItem"><span>New trip</span><span>+</span></div>
+    <div class="menu-item" id="itineraryItem"><span>Itinerary</span><span>&#8250;</span></div>
     <div class="menu-item" id="catSettingsItem"><span>Homepage categories</span><span>&#8250;</span></div>
     <div class="menu-label">Sharing</div>
     <div class="menu-item" id="roomItem"><span>Sync room</span><span id="roomStatus">&#8250;</span></div>
@@ -425,7 +477,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const APP_VERSION = '1.15.0';
+const APP_VERSION = '1.16.0';
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
@@ -470,6 +522,7 @@ let map, markers = {}, currentTrip = null, currentTripFile = null, editingId = n
 let heroMap, heroMarkersLayer;
 let searchMarkers = [], lastSearchResults = [], lastSearchQuery = '', searchDebounceTimer = null;
 let activeCategory = null, pendingPhoto = null, placing = false;
+let sortByDistance = false, lastDeleted = null, undoTimer = null;
 
 const el = id => document.getElementById(id);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
@@ -479,6 +532,20 @@ function cssVar(name, fallbackName){
   return root.getPropertyValue(name).trim() || root.getPropertyValue(fallbackName).trim();
 }
 const categoryColor = cat => cssVar('--' + cat, '--muted');
+function directionsUrl(lat, lng){
+  const isApple = /iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent) && !window.MSStream;
+  return isApple ? `https://maps.apple.com/?daddr=${lat},${lng}` : `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+}
+function distanceKm(lat1, lng1, lat2, lng2){
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+function formatDistance(km){
+  return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`;
+}
 
 function loadTripList(){
   return fetch('trips/index.json', { cache: 'no-store' }).then(r => r.json()).catch(() => ['cyprus.json'])
@@ -510,9 +577,10 @@ function saveVisibleCategories(file, arr){
   localStorage.setItem('tripmap:visible:' + file, JSON.stringify(arr));
 }
 function saveTrip(){
-  localStorage.setItem('tripmap:content:' + currentTripFile, JSON.stringify(currentTrip.places));
+  const clean = JSON.parse(JSON.stringify(currentTrip.places));
+  localStorage.setItem('tripmap:content:' + currentTripFile, JSON.stringify(clean));
   if (fbDb){
-    fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(currentTripFile) + '/places').set(currentTrip.places);
+    fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(currentTripFile) + '/places').set(clean);
   }
 }
 function zoomForPlaceRank(rank){
@@ -584,24 +652,26 @@ function initMap(){
       btn.type = 'button';
       btn.innerHTML = svgIcon('<circle cx="10" cy="10" r="3"/><path d="M10 1.5v3M10 15.5v3M1.5 10h3M15.5 10h3"/>');
       L.DomEvent.disableClickPropagation(btn);
-      L.DomEvent.on(btn, 'click', locateUser);
+      L.DomEvent.on(btn, 'click', () => locateUser());
       return btn;
     }
   });
   new LocateControl().addTo(map);
 }
-let userLocationMarker = null;
-function locateUser(){
+let userLocationMarker = null, userLatLng = null;
+function locateUser(onDone){
   if (!navigator.geolocation){ alert('Location is not available in this browser.'); return; }
   navigator.geolocation.getCurrentPosition(
     pos => {
       const latlng = [pos.coords.latitude, pos.coords.longitude];
+      userLatLng = latlng;
       if (userLocationMarker) map.removeLayer(userLocationMarker);
       userLocationMarker = L.marker(latlng, {
         icon: L.divIcon({ className: 'leaflet-div-icon', html: '<div class="you-are-here"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }),
         zIndexOffset: -1000
       }).addTo(map);
       map.flyTo(latlng, Math.max(map.getZoom(), 14));
+      if (onDone) onDone();
     },
     err => { alert('Could not get your location: ' + err.message); },
     { enableHighAccuracy: true, timeout: 10000 }
@@ -743,7 +813,10 @@ function renderMarkers(){
         ${thumb}
         <div class="map-popup-name">${escapeHtml(p.name)}</div>
         <div class="map-popup-meta">${cat ? cat.label : p.category}${p.visited ? ' &middot; Been' : ''}</div>
-        <button class="map-popup-edit" onclick="window.openEditor('${p.id}')">Edit</button>
+        <div class="map-popup-actions">
+          <button class="map-popup-btn" onclick="window.openEditor('${p.id}')">Edit</button>
+          <a class="map-popup-btn secondary" href="${directionsUrl(p.lat, p.lng)}" target="_blank" rel="noopener">Directions</a>
+        </div>
       </div>`);
     markers[p.id] = m;
   });
@@ -841,7 +914,11 @@ function openCategory(key){
   el('catTitle').textContent = cat.label;
   renderCatBanner(key);
   const places = currentTrip.places.filter(p => p.category === key);
-  const sorted = places.slice().sort((a, b) => (a.visited === b.visited) ? 0 : (a.visited ? 1 : -1));
+  const useDistanceSort = sortByDistance && userLatLng;
+  const sorted = places.slice().sort((a, b) => useDistanceSort
+    ? distanceKm(userLatLng[0], userLatLng[1], a.lat, a.lng) - distanceKm(userLatLng[0], userLatLng[1], b.lat, b.lng)
+    : (a.visited === b.visited) ? 0 : (a.visited ? 1 : -1));
+  el('catSortBtn').classList.toggle('active', !!useDistanceSort);
   const list = el('catList');
   list.innerHTML = '';
   if (!places.length){
@@ -850,11 +927,14 @@ function openCategory(key){
     sorted.forEach(p => {
       const div = document.createElement('div');
       div.className = 'place' + (p.visited ? ' visited' : '');
+      const metaParts = [];
+      if (p.notes) metaParts.push(escapeHtml(p.notes));
+      if (userLatLng) metaParts.push(`${formatDistance(distanceKm(userLatLng[0], userLatLng[1], p.lat, p.lng))} away`);
       div.innerHTML = `
         ${p.photo ? `<img class="place-thumb" src="${p.photo}">` : `<span class="place-dot" style="background:var(--${p.category})"></span>`}
         <div class="place-main">
           <span class="place-name">${escapeHtml(p.name)}</span>
-          ${p.notes ? `<div class="place-notes">${escapeHtml(p.notes)}</div>` : ''}
+          ${metaParts.length ? `<div class="place-notes">${metaParts.join(' &middot; ')}</div>` : ''}
         </div>
         ${p.visited ? '<span class="place-visited-tag">Been</span>' : ''}
         <span class="chev">&#8250;</span>`;
@@ -900,6 +980,42 @@ function quickAddSuggestion(s, key, visited){
   openCategory(key);
 }
 
+/* ---- itinerary ---- */
+function renderItinerary(){
+  const grouped = {};
+  currentTrip.places.forEach(p => {
+    if (p.day){ (grouped[p.day] = grouped[p.day] || []).push(p); }
+  });
+  const days = Object.keys(grouped).map(Number).sort((a, b) => a - b);
+  const list = el('itineraryList');
+  list.innerHTML = '';
+  if (!days.length){
+    list.innerHTML = `<div class="empty-hint">No days planned yet. Open any place and set a Day to add it to your itinerary.</div>`;
+    return;
+  }
+  days.forEach(day => {
+    const label = document.createElement('div');
+    label.className = 'itinerary-day-label';
+    label.textContent = `Day ${day}`;
+    list.appendChild(label);
+    grouped[day].forEach(p => {
+      const cat = CAT_BY_KEY[p.category];
+      const div = document.createElement('div');
+      div.className = 'place' + (p.visited ? ' visited' : '');
+      div.innerHTML = `
+        ${p.photo ? `<img class="place-thumb" src="${p.photo}">` : `<span class="place-dot" style="background:var(--${p.category})"></span>`}
+        <div class="place-main">
+          <span class="place-name">${escapeHtml(p.name)}</span>
+          <div class="place-notes">${cat ? cat.label : ''}</div>
+        </div>
+        ${p.visited ? '<span class="place-visited-tag">Been</span>' : ''}
+        <span class="chev">&#8250;</span>`;
+      div.addEventListener('click', () => openEditor(p.id));
+      list.appendChild(div);
+    });
+  });
+}
+
 /* ---- editor ---- */
 function populateCategorySelect(){
   el('f-cat').innerHTML = CATEGORIES.map(c => `<option value="${c.key}">${c.label}</option>`).join('');
@@ -920,19 +1036,31 @@ function openEditor(id, latlng){
   const isNew = !id;
   el('editorHeading').textContent = isNew ? 'New place' : 'Edit place';
   el('deleteBtn').style.visibility = isNew ? 'hidden' : 'visible';
+  let lat = null, lng = null;
   if (isNew){
     el('f-name').value = '';
     el('f-cat').value = activeCategory || CATEGORIES[0].key;
     el('f-visited').value = '0';
+    el('f-day').value = '';
     el('f-notes').value = '';
     pendingPhoto = null;
+    if (pendingLatLng){ lat = pendingLatLng.lat; lng = pendingLatLng.lng; }
   } else {
     const p = currentTrip.places.find(p => p.id === id);
     el('f-name').value = p.name;
     el('f-cat').value = p.category;
     el('f-visited').value = p.visited ? '1' : '0';
+    el('f-day').value = p.day || '';
     el('f-notes').value = p.notes || '';
     pendingPhoto = p.photo || null;
+    lat = p.lat; lng = p.lng;
+  }
+  const dirBtn = el('directionsBtn');
+  if (lat != null && lng != null){
+    dirBtn.href = directionsUrl(lat, lng);
+    dirBtn.style.display = 'block';
+  } else {
+    dirBtn.style.display = 'none';
   }
   updatePhotoPreview();
   el('f-photo-file').value = '';
@@ -948,10 +1076,12 @@ function closeEditor(){
 function saveEditor(){
   const name = el('f-name').value.trim();
   if (!name){ el('f-name').focus(); return; }
+  const dayVal = el('f-day').value.trim();
   const data = {
     name,
     category: el('f-cat').value,
     visited: el('f-visited').value === '1',
+    day: dayVal ? parseInt(dayVal, 10) : null,
     notes: el('f-notes').value.trim(),
     photo: pendingPhoto
   };
@@ -964,15 +1094,43 @@ function saveEditor(){
   renderMarkers();
   renderHome();
   if (activeCategory) openCategory(activeCategory);
+  if (el('screen-itinerary').classList.contains('active')) renderItinerary();
   closeEditor();
 }
+function showUndoToast(place){
+  lastDeleted = { place };
+  clearTimeout(undoTimer);
+  el('toastText').textContent = `Deleted "${place.name}"`;
+  el('toast').classList.add('show');
+  undoTimer = setTimeout(hideToast, 5000);
+}
+function hideToast(){
+  el('toast').classList.remove('show');
+  lastDeleted = null;
+}
+function undoDelete(){
+  if (!lastDeleted) return;
+  clearTimeout(undoTimer);
+  currentTrip.places.push(lastDeleted.place);
+  saveTrip();
+  renderMarkers();
+  renderHome();
+  if (activeCategory) openCategory(activeCategory);
+  if (el('screen-itinerary').classList.contains('active')) renderItinerary();
+  el('toast').classList.remove('show');
+  lastDeleted = null;
+}
 function deletePlace(){
+  const place = currentTrip.places.find(p => p.id === editingId);
+  if (!place) { closeEditor(); return; }
   currentTrip.places = currentTrip.places.filter(p => p.id !== editingId);
   saveTrip();
   renderMarkers();
   renderHome();
   if (activeCategory) openCategory(activeCategory);
+  if (el('screen-itinerary').classList.contains('active')) renderItinerary();
   closeEditor();
+  showUndoToast(place);
 }
 
 /* ---- trips ---- */
@@ -1059,6 +1217,23 @@ async function boot(){
   });
   el('catBackBtn').addEventListener('click', () => { activeCategory = null; showScreen('screen-home'); });
   el('heroCard').addEventListener('click', () => showScreen('screen-map'));
+  el('catSortBtn').addEventListener('click', () => {
+    if (!userLatLng){
+      locateUser(() => { sortByDistance = true; if (activeCategory) openCategory(activeCategory); });
+      return;
+    }
+    sortByDistance = !sortByDistance;
+    if (activeCategory) openCategory(activeCategory);
+  });
+
+  el('itineraryItem').addEventListener('click', () => {
+    el('menu').classList.remove('open');
+    renderItinerary();
+    showScreen('screen-itinerary');
+  });
+  el('itineraryBackBtn').addEventListener('click', () => showScreen('screen-home'));
+
+  el('toastUndoBtn').addEventListener('click', undoDelete);
 
   el('catSettingsItem').addEventListener('click', () => {
     el('menu').classList.remove('open');
