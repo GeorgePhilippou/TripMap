@@ -130,6 +130,12 @@
   .cat-title-row{ padding:14px 18px 0; flex-shrink:0; display:flex; align-items:center; gap:10px; }
   .cat-title-row h2{ font-family:'Fraunces',serif; font-weight:500; font-size:25px; margin:0; flex:1; }
   .icon-btn.active{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  .cat-filter-wrap{ padding:10px 18px 0; }
+  .cat-filter-wrap input{
+    width:100%; background:var(--surface2); color:var(--text); border:1px solid var(--border);
+    border-radius:10px; padding:9px 12px; font-size:13px; font-family:inherit;
+  }
+  .area-sublabel{ font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; padding:10px 18px 4px; font-weight:600; }
   #catSortBtn{ color:var(--accent); }
   #catSortBtn.active{ color:var(--accent-ink); }
   .place-list{ margin-top:8px; }
@@ -356,6 +362,9 @@
         <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="3"/><path d="M10 1.5v3M10 15.5v3M1.5 10h3M15.5 10h3"/></svg>
       </button>
     </div>
+    <div class="cat-filter-wrap" id="catFilterWrap" style="display:none;">
+      <input id="catFilter" type="text" placeholder="Filter this list…" autocomplete="off">
+    </div>
     <div class="place-list" id="catList"></div>
   </section>
 
@@ -474,6 +483,7 @@
     <div style="padding:0 14px 10px;"><select id="tripSelect"></select></div>
     <div class="menu-item" id="newTripItem"><span>New trip</span><span>+</span></div>
     <div class="menu-item" id="itineraryItem"><span>Itinerary</span><span>&#8250;</span></div>
+    <div class="menu-item" id="nearestItem"><span>Nearest place</span><span>&#8250;</span></div>
     <div class="menu-item" id="tripDatesItem"><span>Trip dates</span><span>&#8250;</span></div>
     <div class="menu-item" id="catSettingsItem"><span>Homepage categories</span><span>&#8250;</span></div>
     <div class="menu-label">Sharing</div>
@@ -491,7 +501,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const APP_VERSION = '1.20.0';
+const APP_VERSION = '1.21.0';
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
@@ -811,6 +821,23 @@ function locateUser(onDone){
     { enableHighAccuracy: true, timeout: 10000 }
   );
 }
+function findNearestUnvisited(){
+  if (!userLatLng || !currentTrip) return null;
+  const candidates = currentTrip.places.filter(p => !p.visited);
+  return candidates.reduce((best, p) => {
+    const dist = distanceKm(userLatLng[0], userLatLng[1], p.lat, p.lng);
+    return (!best || dist < best.dist) ? { place: p, dist } : best;
+  }, null);
+}
+function goToNearest(){
+  const jump = () => {
+    const result = findNearestUnvisited();
+    if (!result){ alert('No saved places left to visit — add some, or everything is already marked Been!'); return; }
+    openEditor(result.place.id);
+  };
+  if (userLatLng) jump();
+  else locateUser(jump);
+}
 function initHeroMap(){
   heroMap = L.map('heroMap', {
     zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false,
@@ -932,24 +959,36 @@ function parseLocationInput(raw){
         const [lat, lng] = ll.split(',').map(parseFloat);
         if (!isNaN(lat) && !isNaN(lng)) return { lat, lng, name };
       }
+      // No exact coordinates in the link, but a name/address is still a usable search query.
+      const fallback = name || u.searchParams.get('address');
+      if (fallback) return { query: fallback };
     }
 
-    if (u.hostname.includes('google.') && u.pathname.includes('/maps')){
+    // Google Maps puts "maps" in the path (google.com/maps/...) almost everywhere,
+    // but the maps.google.* subdomain form puts it in the hostname instead.
+    if ((u.hostname.includes('google.') && u.pathname.includes('/maps')) || u.hostname.startsWith('maps.google.')){
       let name = '';
       const placeMatch = u.pathname.match(/\/place\/([^/@]+)/);
       if (placeMatch) name = decodeURIComponent(placeMatch[1].replace(/\+/g, ' '));
       const qParam = u.searchParams.get('q') || u.searchParams.get('query');
-      if (qParam && /^-?\d+\.\d+,-?\d+\.\d+$/.test(qParam)){
+      const qIsCoords = qParam && /^-?\d+\.\d+,-?\d+\.\d+$/.test(qParam);
+      if (qIsCoords){
         const [lat, lng] = qParam.split(',').map(parseFloat);
         return { lat, lng, name };
       }
       const atMatch = u.href.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
       if (atMatch) return { lat: parseFloat(atMatch[1]), lng: parseFloat(atMatch[2]), name };
+      // No coordinates anywhere in the URL - Maps links very often carry the place
+      // name as plain text (q=, query=, or the /place/Name/ path segment) instead,
+      // which is just as usable as if it had been typed into search directly.
+      const fallback = name || (qParam ? decodeURIComponent(qParam.replace(/\+/g, ' ')) : '');
+      if (fallback) return { query: fallback };
     }
 
-    // Shortened link (e.g. maps.app.goo.gl) or an unrecognized maps URL -
-    // the real destination is server-side only; this single-file client-side
-    // app has no backend to follow the redirect and read the resolved coords.
+    // Shortened link (e.g. maps.app.goo.gl, goo.gl/maps) or an unrecognized maps
+    // URL with no name or coordinates anywhere in it - the real destination is
+    // server-side only; this single-file client-side app has no backend to
+    // follow the redirect and read the resolved coords.
     return { unresolved: true, url };
   }
 
@@ -984,9 +1023,10 @@ function handleSharedLaunch(){
     showScreen('screen-map');
     alert('You shared a Maps link, but it’s a shortened link Trip Map can’t read directly. Share the address or place name instead, or paste it into the search bar.');
   } else {
+    const searchText = (parsed && parsed.query) || cleanSearchText(shared);
     showScreen('screen-map');
-    el('search').value = shared;
-    runSearch(shared);
+    el('search').value = searchText;
+    runSearch(searchText);
   }
 }
 function renderSearchResults(results){
@@ -1166,7 +1206,26 @@ function renderCatBanner(key){
     el('catBannerIcon').innerHTML = cat.icon;
   }
 }
+function renderPlaceRow(p){
+  const div = document.createElement('div');
+  div.className = 'place' + (p.visited ? ' visited' : '');
+  const metaParts = [];
+  if (p.notes) metaParts.push(escapeHtml(p.notes));
+  if (userLatLng) metaParts.push(`${formatDistance(distanceKm(userLatLng[0], userLatLng[1], p.lat, p.lng))} away`);
+  div.innerHTML = `
+    ${p.photo ? `<img class="place-thumb" src="${p.photo}">` : `<span class="place-dot" style="background:var(--${p.category})"></span>`}
+    <div class="place-main">
+      <span class="place-name">${escapeHtml(p.name)}</span>
+      ${metaParts.length ? `<div class="place-notes">${metaParts.join(' &middot; ')}</div>` : ''}
+    </div>
+    ${p.visited ? '<span class="place-visited-tag">Been</span>' : ''}
+    <span class="chev">&#8250;</span>`;
+  div.addEventListener('click', () => openEditor(p.id));
+  return div;
+}
+let categoryFilter = '';
 function openCategory(key){
+  if (activeCategory !== key) categoryFilter = '';
   activeCategory = key;
   const cat = CAT_BY_KEY[key];
   el('catTitle').textContent = cat.label;
@@ -1175,13 +1234,22 @@ function openCategory(key){
   places.forEach(p => ensureLocality(p));
   const useDistanceSort = sortByDistance && userLatLng;
   el('catSortBtn').classList.toggle('active', !!useDistanceSort);
+
+  el('catFilterWrap').style.display = places.length > 8 ? 'block' : 'none';
+  el('catFilter').value = categoryFilter;
+  const filtered = categoryFilter
+    ? places.filter(p => p.name.toLowerCase().includes(categoryFilter.toLowerCase()))
+    : places;
+
   const list = el('catList');
   list.innerHTML = '';
   if (!places.length){
     list.innerHTML = `<div class="empty-hint">No ${cat.label.toLowerCase()} yet. Tap + on the map to add one, or pick a suggestion below.</div>`;
+  } else if (!filtered.length){
+    list.innerHTML = `<div class="empty-hint">No matches for "${escapeHtml(categoryFilter)}".</div>`;
   } else {
     const groups = {};
-    places.forEach(p => {
+    filtered.forEach(p => {
       const gkey = p.locality || 'Other places';
       (groups[gkey] = groups[gkey] || []).push(p);
     });
@@ -1199,29 +1267,14 @@ function openCategory(key){
       label.className = 'section-label';
       label.textContent = `${gkey} (${groupPlaces.length})`;
       list.appendChild(label);
-      groupPlaces.forEach(p => {
-        const div = document.createElement('div');
-        div.className = 'place' + (p.visited ? ' visited' : '');
-        const metaParts = [];
-        if (p.notes) metaParts.push(escapeHtml(p.notes));
-        if (userLatLng) metaParts.push(`${formatDistance(distanceKm(userLatLng[0], userLatLng[1], p.lat, p.lng))} away`);
-        div.innerHTML = `
-          ${p.photo ? `<img class="place-thumb" src="${p.photo}">` : `<span class="place-dot" style="background:var(--${p.category})"></span>`}
-          <div class="place-main">
-            <span class="place-name">${escapeHtml(p.name)}</span>
-            ${metaParts.length ? `<div class="place-notes">${metaParts.join(' &middot; ')}</div>` : ''}
-          </div>
-          ${p.visited ? '<span class="place-visited-tag">Been</span>' : ''}
-          <span class="chev">&#8250;</span>`;
-        div.addEventListener('click', () => openEditor(p.id));
-        list.appendChild(div);
-      });
+      groupPlaces.forEach(p => list.appendChild(renderPlaceRow(p)));
     });
   }
 
   const suggestions = (currentTrip.suggestions && currentTrip.suggestions[key]) || [];
   const addedIds = new Set(currentTrip.places.map(p => p.fromSuggestion).filter(Boolean));
-  const remaining = suggestions.filter(s => !addedIds.has(s.id));
+  const remaining = suggestions.filter(s => !addedIds.has(s.id)
+    && (!categoryFilter || s.name.toLowerCase().includes(categoryFilter.toLowerCase())));
   if (remaining.length){
     const label = document.createElement('div');
     label.className = 'section-label';
@@ -1258,11 +1311,27 @@ function quickAddSuggestion(s, key, visited){
 }
 
 /* ---- itinerary ---- */
+function renderItineraryRow(p){
+  const cat = CAT_BY_KEY[p.category];
+  const div = document.createElement('div');
+  div.className = 'place' + (p.visited ? ' visited' : '');
+  div.innerHTML = `
+    ${p.photo ? `<img class="place-thumb" src="${p.photo}">` : `<span class="place-dot" style="background:var(--${p.category})"></span>`}
+    <div class="place-main">
+      <span class="place-name">${escapeHtml(p.name)}</span>
+      <div class="place-notes">${cat ? cat.label : ''}</div>
+    </div>
+    ${p.visited ? '<span class="place-visited-tag">Been</span>' : ''}
+    <span class="chev">&#8250;</span>`;
+  div.addEventListener('click', () => openEditor(p.id));
+  return div;
+}
 function renderItinerary(){
   const grouped = {};
   currentTrip.places.forEach(p => {
     if (p.day){ (grouped[p.day] = grouped[p.day] || []).push(p); }
   });
+  currentTrip.places.forEach(p => { if (p.day) ensureLocality(p); });
   const days = Object.keys(grouped).map(Number).sort((a, b) => a - b);
   const list = el('itineraryList');
   list.innerHTML = '';
@@ -1275,21 +1344,26 @@ function renderItinerary(){
     label.className = 'section-label';
     label.textContent = `Day ${day}`;
     list.appendChild(label);
-    grouped[day].forEach(p => {
-      const cat = CAT_BY_KEY[p.category];
-      const div = document.createElement('div');
-      div.className = 'place' + (p.visited ? ' visited' : '');
-      div.innerHTML = `
-        ${p.photo ? `<img class="place-thumb" src="${p.photo}">` : `<span class="place-dot" style="background:var(--${p.category})"></span>`}
-        <div class="place-main">
-          <span class="place-name">${escapeHtml(p.name)}</span>
-          <div class="place-notes">${cat ? cat.label : ''}</div>
-        </div>
-        ${p.visited ? '<span class="place-visited-tag">Been</span>' : ''}
-        <span class="chev">&#8250;</span>`;
-      div.addEventListener('click', () => openEditor(p.id));
-      list.appendChild(div);
-    });
+
+    const dayPlaces = grouped[day];
+    const areaKeys = new Set(dayPlaces.map(p => p.locality || 'Other places'));
+    if (areaKeys.size > 1){
+      const areas = {};
+      dayPlaces.forEach(p => {
+        const a = p.locality || 'Other places';
+        (areas[a] = areas[a] || []).push(p);
+      });
+      Object.keys(areas).sort((a, b) => a === 'Other places' ? 1 : b === 'Other places' ? -1 : a.localeCompare(b))
+        .forEach(area => {
+          const areaLabel = document.createElement('div');
+          areaLabel.className = 'area-sublabel';
+          areaLabel.textContent = area;
+          list.appendChild(areaLabel);
+          areas[area].forEach(p => list.appendChild(renderItineraryRow(p)));
+        });
+    } else {
+      dayPlaces.forEach(p => list.appendChild(renderItineraryRow(p)));
+    }
   });
 }
 
@@ -1553,6 +1627,10 @@ async function boot(){
     sortByDistance = !sortByDistance;
     if (activeCategory) openCategory(activeCategory);
   });
+  el('catFilter').addEventListener('input', e => {
+    categoryFilter = e.target.value;
+    if (activeCategory) openCategory(activeCategory);
+  });
 
   el('itineraryItem').addEventListener('click', () => {
     el('menu').classList.remove('open');
@@ -1560,6 +1638,11 @@ async function boot(){
     showScreen('screen-itinerary');
   });
   el('itineraryBackBtn').addEventListener('click', () => showScreen('screen-home'));
+
+  el('nearestItem').addEventListener('click', () => {
+    el('menu').classList.remove('open');
+    goToNearest();
+  });
 
   el('tripDatesItem').addEventListener('click', () => {
     const startInput = prompt('Trip start date (YYYY-MM-DD), or leave blank to clear:', currentTrip.startDate || '');
@@ -1750,9 +1833,16 @@ async function boot(){
       if (parsed && (parsed.lat != null || parsed.unresolved)){
         clearTimeout(searchDebounceTimer);
         handleParsedLocation(parsed);
-      } else if (cleaned){
-        clearTimeout(searchDebounceTimer);
-        searchDebounceTimer = setTimeout(() => runSearch(cleaned), 150);
+      } else {
+        // A Maps link with no coordinates in it can still resolve to a usable
+        // place name/address (parsed.query) - search that instead of the raw
+        // pasted link text, and show it in the box so it's clear what's happening.
+        const searchText = (parsed && parsed.query) || cleaned;
+        if (searchText){
+          el('search').value = searchText;
+          clearTimeout(searchDebounceTimer);
+          searchDebounceTimer = setTimeout(() => runSearch(searchText), 150);
+        }
       }
     }, 0);
   });
@@ -1760,11 +1850,12 @@ async function boot(){
     if (e.key !== 'Enter') return;
     e.preventDefault();
     clearTimeout(searchDebounceTimer);
-    const q = cleanSearchText(e.target.value);
-    if (!q) return;
-    el('search').value = q;
-    const parsed = parseLocationInput(q);
+    const raw = cleanSearchText(e.target.value);
+    if (!raw) return;
+    const parsed = parseLocationInput(raw);
     if (handleParsedLocation(parsed)) return;
+    const q = (parsed && parsed.query) || raw;
+    el('search').value = q;
     if (lastSearchQuery === q && lastSearchResults.length){
       if (lastSearchResults.length === 1) selectSearchResult(lastSearchResults[0]);
       return; // multiple candidates - leave the dropdown open so the right one can be tapped
