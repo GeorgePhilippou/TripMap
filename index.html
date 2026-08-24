@@ -310,8 +310,11 @@
     padding:10px 12px; display:none; max-width:170px; box-shadow:0 4px 16px rgba(0,0,0,.12);
   }
   .map-legend.show{ display:block; }
-  .legend-row{ display:flex; align-items:center; gap:8px; padding:3px 0; font-size:12px; }
+  .legend-row{ display:flex; align-items:center; gap:8px; padding:4px 5px; font-size:12px; border-radius:6px; cursor:pointer; }
+  .legend-row:hover{ background:var(--surface2); }
+  .legend-row.active{ background:var(--accent-soft); font-weight:600; }
   .legend-dot{ width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+  .legend-reset{ color:var(--accent); font-weight:600; border-top:1px solid var(--border); margin-top:4px; padding-top:8px; justify-content:center; }
 
   /* ---- undo toast ---- */
   .toast{
@@ -501,7 +504,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const APP_VERSION = '1.21.0';
+const APP_VERSION = '1.22.0';
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
@@ -546,7 +549,7 @@ let map, markers = {}, currentTrip = null, currentTripFile = null, editingId = n
 let heroMap, heroMarkersLayer;
 let searchMarkers = [], lastSearchResults = [], lastSearchQuery = '', searchDebounceTimer = null;
 let activeCategory = null, pendingPhoto = null, placing = false;
-let sortByDistance = false, lastDeleted = null, undoTimer = null, repositioningId = null;
+let sortByDistance = false, lastDeleted = null, undoTimer = null, repositioningId = null, mapCategoryFilter = null;
 
 const el = id => document.getElementById(id);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
@@ -570,10 +573,22 @@ function distanceKm(lat1, lng1, lat2, lng2){
 function formatDistance(km){
   return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`;
 }
+function cleanAdminName(s){
+  return (s || '').replace(/\s+(Municipality|Community|British Sovereign Base Area)$/i, '').trim() || null;
+}
 function extractLocality(addr){
   if (!addr) return null;
-  return addr.suburb || addr.neighbourhood || addr.quarter || addr.town || addr.village
-    || addr.city_district || addr.municipality || addr.city || addr.county || null;
+  // Prefer an actual named settlement (village/town) over a fine-grained OSM
+  // subdivision tag (suburb/neighbourhood/quarter) - those subdivisions are
+  // often too obscure to be recognisable (e.g. "Petridia" or "Agios
+  // Theodoros" for places most people would just call "Empa" or "Paphos").
+  // Pair whatever specific name is found with the broader city/municipality
+  // as a second reference point, skipping it when redundant.
+  const specific = cleanAdminName(addr.village || addr.town || addr.suburb || addr.neighbourhood || addr.quarter);
+  const district = cleanAdminName(addr.city || addr.municipality);
+  if (!specific) return district || null;
+  if (!district || district === specific || specific.includes(district) || district.includes(specific)) return specific;
+  return `${specific}, ${district}`;
 }
 let localityQueue = Promise.resolve();
 const localityInFlight = new Set();
@@ -588,6 +603,7 @@ function ensureLocality(p){
         const res = await fetch(url);
         const data = await res.json();
         p.locality = extractLocality(data.address) || null; // null = genuinely no locality-level data, cache it
+        p.localityV = LOCALITY_FORMAT_VERSION;
         saveTrip();
         if (activeCategory === p.category && el('screen-category').classList.contains('active')) openCategory(activeCategory);
       } catch (err) {
@@ -745,10 +761,16 @@ function boundsSpanReasonable(bounds, rank){
     : rank <= 4 ? 70 : rank <= 8 ? 15 : rank <= 10 ? 6 : rank <= 12 ? 2.5 : rank <= 16 ? 1.2 : 0.6;
   return span <= maxAllowed;
 }
+const LOCALITY_FORMAT_VERSION = 2;
 function migratePlaces(places){
   let changed = false;
   places.forEach(p => {
     if (CATEGORY_MIGRATIONS[p.category]){ p.category = CATEGORY_MIGRATIONS[p.category]; changed = true; }
+    if (p.locality !== undefined && p.localityV !== LOCALITY_FORMAT_VERSION){
+      delete p.locality; // re-resolve under the improved area-name logic
+      p.localityV = LOCALITY_FORMAT_VERSION;
+      changed = true;
+    }
   });
   return changed;
 }
@@ -1070,16 +1092,32 @@ function pinIcon(cat){
   });
 }
 function renderMapLegend(){
-  el('mapLegendList').innerHTML = CATEGORIES.map(c => `
-    <div class="legend-row">
+  const rows = CATEGORIES.map(c => `
+    <div class="legend-row${mapCategoryFilter === c.key ? ' active' : ''}" data-cat="${c.key}">
       <span class="legend-dot" style="background:var(--${c.key})"></span>
       <span>${c.label}</span>
     </div>`).join('');
+  const resetRow = mapCategoryFilter ? `<div class="legend-row legend-reset" id="legendResetRow">Show all</div>` : '';
+  el('mapLegendList').innerHTML = rows + resetRow;
+  el('mapLegendList').querySelectorAll('.legend-row[data-cat]').forEach(row => {
+    row.addEventListener('click', () => {
+      mapCategoryFilter = mapCategoryFilter === row.dataset.cat ? null : row.dataset.cat;
+      renderMapLegend();
+      renderMarkers();
+    });
+  });
+  if (mapCategoryFilter){
+    el('legendResetRow').addEventListener('click', () => {
+      mapCategoryFilter = null;
+      renderMapLegend();
+      renderMarkers();
+    });
+  }
 }
 function renderMarkers(){
   Object.values(markers).forEach(m => map.removeLayer(m));
   markers = {};
-  currentTrip.places.forEach(p => {
+  currentTrip.places.filter(p => !mapCategoryFilter || p.category === mapCategoryFilter).forEach(p => {
     const m = L.marker([p.lat, p.lng], { icon: pinIcon(p.category) }).addTo(map);
     const thumb = p.photo ? `<img src="${p.photo}" style="width:100%;max-width:180px;height:90px;object-fit:cover;border-radius:8px;margin-bottom:6px;display:block;">` : '';
     const cat = CAT_BY_KEY[p.category];
@@ -1499,6 +1537,7 @@ function setTrip(file, definition){
   if (fbDatesRef) { fbDatesRef.off(); fbDatesRef = null; }
   clearSearchResults();
   el('search').value = '';
+  mapCategoryFilter = null;
   currentTripFile = file;
   currentTrip = {
     name: definition.name,
@@ -1515,6 +1554,7 @@ function setTrip(file, definition){
   };
   if (currentTrip.bounds) map.fitBounds(currentTrip.bounds, { maxZoom: 15 });
   else map.setView(currentTrip.center, currentTrip.zoom);
+  renderMapLegend();
   renderMarkers();
   renderHome();
   fetchWeather();
