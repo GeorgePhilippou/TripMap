@@ -504,7 +504,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const APP_VERSION = '1.22.0';
+const APP_VERSION = '1.22.1';
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
@@ -800,6 +800,11 @@ function showScreen(id){
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   el(id).classList.add('active');
   if (id === 'screen-map') setTimeout(() => map.invalidateSize(), 50);
+}
+function resetMapView(){
+  if (!currentTrip) return;
+  if (currentTrip.bounds) map.fitBounds(currentTrip.bounds, { maxZoom: 15 });
+  else map.setView(currentTrip.center, currentTrip.zoom);
 }
 
 /* ---- map ---- */
@@ -1552,8 +1557,7 @@ function setTrip(file, definition){
     endDate: null,
     visibleCategories: loadVisibleCategories(file)
   };
-  if (currentTrip.bounds) map.fitBounds(currentTrip.bounds, { maxZoom: 15 });
-  else map.setView(currentTrip.center, currentTrip.zoom);
+  resetMapView();
   renderMapLegend();
   renderMarkers();
   renderHome();
@@ -1658,7 +1662,7 @@ async function boot(){
     }
   });
   el('catBackBtn').addEventListener('click', () => { activeCategory = null; showScreen('screen-home'); });
-  el('heroCard').addEventListener('click', () => showScreen('screen-map'));
+  el('heroCard').addEventListener('click', () => { resetMapView(); showScreen('screen-map'); });
   el('catSortBtn').addEventListener('click', () => {
     if (!userLatLng){
       locateUser(() => { sortByDistance = true; if (activeCategory) openCategory(activeCategory); });
