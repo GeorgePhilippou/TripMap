@@ -382,11 +382,34 @@
   .forecast-temps{ flex:1; text-align:right; font-size:13px; color:var(--muted); }
   .forecast-temps b{ color:var(--text); }
 
-  /* ---- trip notes ---- */
-  #notesText{
-    flex:1; width:100%; background:var(--surface2); color:var(--text); border:1px solid var(--border);
-    border-radius:10px; padding:14px; font-size:14px; font-family:inherit; resize:none; margin:0 18px;
-    width:calc(100% - 36px);
+  /* ---- trip notes checklist (shared by the full notes screen and the
+     iPad side panel widget) ---- */
+  .checklist{ flex:1; min-height:0; overflow-y:auto; }
+  .checklist-item{ display:flex; align-items:center; gap:10px; padding:10px 18px; }
+  .checklist-item + .checklist-item{ border-top:1px solid var(--border); }
+  .checklist-check{
+    width:20px; height:20px; border-radius:50%; border:1.5px solid var(--border); background:var(--surface);
+    flex-shrink:0; display:flex; align-items:center; justify-content:center; cursor:pointer; color:transparent;
+    transition:background .15s ease, border-color .15s ease;
+  }
+  .checklist-check svg{ width:11px; height:11px; }
+  .checklist-item.done .checklist-check{ background:var(--accent); border-color:var(--accent); color:var(--surface); }
+  .checklist-text{ flex:1; font-size:14px; word-break:break-word; cursor:pointer; }
+  .checklist-item.done .checklist-text{ text-decoration:line-through; color:var(--muted); }
+  .checklist-remove{
+    background:none; border:none; color:var(--muted); font-size:18px; line-height:1; cursor:pointer;
+    padding:4px; flex-shrink:0; opacity:.5;
+  }
+  .checklist-remove:hover{ opacity:1; color:var(--text); }
+  .checklist-empty{ padding:28px 18px; text-align:center; color:var(--muted); font-size:13px; }
+  .checklist-add{ display:flex; gap:8px; padding:12px 18px; border-top:1px solid var(--border); flex-shrink:0; }
+  .checklist-add input{
+    flex:1; min-width:0; background:var(--surface2); color:var(--text); border:1px solid var(--border);
+    border-radius:8px; padding:9px 12px; font-size:14px; font-family:inherit;
+  }
+  .checklist-add button{
+    background:var(--accent); color:var(--surface); border:none; border-radius:8px; width:36px; flex-shrink:0;
+    font-size:18px; cursor:pointer;
   }
 
   /* ---- recap screen ---- */
@@ -400,23 +423,43 @@
   .recap-bar-fill{ height:100%; background:var(--accent); border-radius:3px; }
   .recap-row .recap-count{ font-size:12px; color:var(--muted); width:44px; text-align:right; flex-shrink:0; }
 
-  /* ---- iPad landscape live overview panel ----
+  /* ---- iPad landscape dashboard: side panel + hero handoff ----
      1100px covers real iPad landscape widths (base/Air 11" ~1180pt, Pro 11"
      ~1194pt, mini ~1133pt) with room to spare - 1300px was tuned against a
      desktop browser window and never actually fired on an iPad. */
   #sidePanel{ display:none; }
+  .next-up-pill{ display:none; }
   @media (min-width:1100px) and (orientation:landscape){
     body{ gap:20px; }
     #sidePanel{
-      display:block; width:320px; height:calc(100dvh - 64px); margin:32px 0;
-      border:1px solid var(--border); border-radius:20px; overflow:hidden;
-      box-shadow:0 24px 60px rgba(0,0,0,.14); position:relative;
+      display:flex; flex-direction:column; gap:16px; width:320px; height:calc(100dvh - 64px); margin:32px 0;
+    }
+    #sideMapCard{
+      flex:1 1 55%; min-height:0; border:1px solid var(--border); border-radius:20px; overflow:hidden;
+      box-shadow:0 24px 60px rgba(0,0,0,.14); position:relative; cursor:pointer;
     }
     #sideMap{ width:100%; height:100%; }
     .side-panel-label{
       position:absolute; top:14px; left:14px; z-index:500; background:var(--overlay); backdrop-filter:blur(6px);
       border:1px solid var(--border); border-radius:10px; padding:7px 11px; font-size:12px; font-weight:600;
     }
+    #sideNotesCard{
+      flex:1 1 45%; min-height:0; display:flex; flex-direction:column; background:var(--surface);
+      border:1px solid var(--border); border-radius:20px; overflow:hidden; box-shadow:0 24px 60px rgba(0,0,0,.14);
+    }
+    #sideNotesCard .side-panel-header{
+      flex-shrink:0; padding:14px 18px 6px; font-size:11px; font-weight:600; text-transform:uppercase;
+      letter-spacing:.04em; color:var(--accent);
+    }
+    #sideNotesCard .checklist-item{ padding:8px 18px; }
+    #sideNotesCard .checklist-add{ padding:10px 18px; }
+    /* The side map already shows the trip overview, so the home hero map
+       would just be a smaller duplicate of it - hide the hero and surface
+       its "next up" info as a pill in the info strip instead, so that nudge
+       isn't lost, and let the category grid expand into the freed space. */
+    #heroCard{ display:none; }
+    .grid{ margin-top:14px; }
+    .next-up-pill{ display:flex; }
   }
 </style>
 </head>
@@ -491,7 +534,11 @@
       <button class="icon-btn" id="notesBackBtn">&#8592;</button>
       <h2>Trip notes</h2>
     </div>
-    <textarea id="notesText" placeholder="Booking confirmation numbers, packing list, anything worth keeping handy…"></textarea>
+    <div class="checklist" id="notesChecklist"></div>
+    <form class="checklist-add" id="notesChecklistForm">
+      <input id="notesChecklistInput" type="text" placeholder="Packing list, confirmation numbers, anything worth keeping handy…" autocomplete="off">
+      <button type="submit" aria-label="Add">+</button>
+    </form>
   </section>
 
   <!-- TRIP RECAP -->
@@ -546,8 +593,18 @@
 </div>
 
 <div id="sidePanel">
-  <div class="side-panel-label" id="sidePanelLabel">Trip</div>
-  <div id="sideMap"></div>
+  <div id="sideMapCard">
+    <div class="side-panel-label" id="sidePanelLabel">Trip</div>
+    <div id="sideMap"></div>
+  </div>
+  <div id="sideNotesCard">
+    <div class="side-panel-header">Notes</div>
+    <div class="checklist" id="sideChecklist"></div>
+    <form class="checklist-add" id="sideChecklistForm">
+      <input id="sideChecklistInput" type="text" placeholder="Add a note…" autocomplete="off">
+      <button type="submit" aria-label="Add">+</button>
+    </form>
+  </div>
 </div>
 
 <!-- EDITOR -->
@@ -654,12 +711,14 @@
     <div class="menu-label">Trip</div>
     <div style="padding:0 14px 10px;"><select id="tripSelect"></select></div>
     <div class="menu-item" id="newTripItem"><span>New trip</span><span>+</span></div>
+    <div class="menu-label">Plan</div>
     <div class="menu-item" id="itineraryItem"><span>Itinerary</span><span>&#8250;</span></div>
     <div class="menu-item" id="flightsItem"><span>Flights</span><span>&#8250;</span></div>
     <div class="menu-item" id="nearestItem"><span>Nearest place</span><span>&#8250;</span></div>
+    <div class="menu-item" id="recapItem"><span>Trip recap</span><span>&#8250;</span></div>
+    <div class="menu-label">Settings</div>
     <div class="menu-item" id="tripDatesItem"><span>Trip dates</span><span>&#8250;</span></div>
     <div class="menu-item" id="notesItem"><span>Trip notes</span><span>&#8250;</span></div>
-    <div class="menu-item" id="recapItem"><span>Trip recap</span><span>&#8250;</span></div>
     <div class="menu-item" id="catSettingsItem"><span>Homepage categories</span><span>&#8250;</span></div>
     <div class="menu-label">Sharing</div>
     <div class="menu-item" id="roomItem"><span>Sync room</span><span id="roomStatus">&#8250;</span></div>
@@ -677,7 +736,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const APP_VERSION = '1.28.0';
+const APP_VERSION = '1.29.0';
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
@@ -691,7 +750,7 @@ const FIREBASE_CONFIG = {
 const DEFAULT_ROOM = 'philippou-megan-8x4q';
 const ROOM_KEY = 'tripmap:room';
 const LOCAL_TRIPS_KEY = 'tripmap:localtrips';
-let fbApp, fbDb, fbRef, fbDatesRef, fbFlightsRef, fbNotesRef;
+let fbApp, fbDb, fbRef, fbDatesRef, fbFlightsRef, fbChecklistRef;
 try {
   fbApp = firebase.initializeApp(FIREBASE_CONFIG);
   fbDb = firebase.database();
@@ -967,12 +1026,55 @@ function loadLocalDates(file){
   const saved = localStorage.getItem('tripmap:dates:' + file);
   return saved ? JSON.parse(saved) : { start: null, end: null };
 }
-function saveNotes(){
-  const notes = currentTrip.notes || '';
-  localStorage.setItem('tripmap:notes:' + currentTripFile, notes);
+function saveChecklist(){
+  localStorage.setItem('tripmap:checklist:' + currentTripFile, JSON.stringify(currentTrip.checklist));
   if (fbDb){
-    fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(currentTripFile) + '/notes').set(notes);
+    fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(currentTripFile) + '/checklist').set(currentTrip.checklist);
   }
+}
+function addChecklistItem(text){
+  const trimmed = text.trim();
+  if (!trimmed) return;
+  currentTrip.checklist.push({ id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), text: trimmed, done: false });
+  saveChecklist();
+  renderChecklistViews();
+}
+function toggleChecklistItem(id){
+  const item = currentTrip.checklist.find(i => i.id === id);
+  if (!item) return;
+  item.done = !item.done;
+  saveChecklist();
+  renderChecklistViews();
+}
+function removeChecklistItem(id){
+  currentTrip.checklist = currentTrip.checklist.filter(i => i.id !== id);
+  saveChecklist();
+  renderChecklistViews();
+}
+function checklistItemHtml(item){
+  return `<div class="checklist-item${item.done ? ' done' : ''}" data-id="${item.id}">
+    <div class="checklist-check">${CHECK_ICON}</div>
+    <div class="checklist-text">${escapeHtml(item.text)}</div>
+    <button class="checklist-remove" type="button" aria-label="Remove">&times;</button>
+  </div>`;
+}
+function renderChecklistInto(container){
+  if (!container) return;
+  if (!currentTrip.checklist.length){
+    container.innerHTML = `<div class="checklist-empty">Nothing here yet — add a note below.</div>`;
+    return;
+  }
+  container.innerHTML = currentTrip.checklist.map(checklistItemHtml).join('');
+  container.querySelectorAll('.checklist-check, .checklist-text').forEach(node => {
+    node.addEventListener('click', () => toggleChecklistItem(node.closest('.checklist-item').dataset.id));
+  });
+  container.querySelectorAll('.checklist-remove').forEach(btn => {
+    btn.addEventListener('click', () => removeChecklistItem(btn.closest('.checklist-item').dataset.id));
+  });
+}
+function renderChecklistViews(){
+  renderChecklistInto(el('notesChecklist'));
+  renderChecklistInto(el('sideChecklist'));
 }
 function saveDates(){
   const dates = { start: currentTrip.startDate || null, end: currentTrip.endDate || null };
@@ -1540,6 +1642,7 @@ function renderHome(){
     el('progressTrack').style.display = 'none';
   }
 
+  const next = currentTrip.places.find(p => !p.visited);
   const pills = [];
   if (weatherData){
     pills.push(`<div class="info-pill clickable" id="weatherPill">${weatherIcon(weatherData.code)}<span>${weatherData.current}&deg; &middot; H:${weatherData.max}&deg; L:${weatherData.min}&deg;</span></div>`);
@@ -1556,6 +1659,13 @@ function renderHome(){
   if (recent){
     pills.push(`<div class="info-pill clickable" id="recentActivityPill"><span class="activity-dot"></span><span>${escapeHtml(recent.addedBy || 'Someone')} added <b>${escapeHtml(recent.name)}</b> &middot; ${formatRelativeTime(recent.addedAt)}</span></div>`);
   }
+  if (next){
+    const nextCat = CAT_BY_KEY[next.category];
+    // Hidden by default (CSS) - only shown on the iPad landscape dashboard,
+    // where the hero card (which normally carries this "next up" nudge) is
+    // hidden in favor of the side panel's own overview map.
+    pills.push(`<div class="info-pill clickable next-up-pill" id="nextUpPill">${nextCat ? nextCat.icon : ''}<span><b>${escapeHtml(next.name)}</b> &middot; Next up</span></div>`);
+  }
   el('infoStrip').innerHTML = pills.join('');
   if (weatherData){
     el('weatherPill').addEventListener('click', renderForecastSheet);
@@ -1566,8 +1676,10 @@ function renderHome(){
   if (recent){
     el('recentActivityPill').addEventListener('click', () => openEditor(recent.id));
   }
+  if (next){
+    el('nextUpPill').addEventListener('click', () => openEditor(next.id));
+  }
 
-  const next = currentTrip.places.find(p => !p.visited);
   const heroPhoto = el('heroPhoto');
   if (next && next.photos && next.photos[0]){
     heroPhoto.style.backgroundImage = `linear-gradient(160deg, rgba(0,0,0,.1), rgba(0,0,0,.55)), url(${next.photos[0]})`;
@@ -2097,7 +2209,7 @@ function setTrip(file, definition){
   if (fbRef) { fbRef.off(); fbRef = null; }
   if (fbDatesRef) { fbDatesRef.off(); fbDatesRef = null; }
   if (fbFlightsRef) { fbFlightsRef.off(); fbFlightsRef = null; }
-  if (fbNotesRef) { fbNotesRef.off(); fbNotesRef = null; }
+  if (fbChecklistRef) { fbChecklistRef.off(); fbChecklistRef = null; }
   clearSearchResults();
   el('search').value = '';
   mapCategoryFilter = null;
@@ -2113,7 +2225,7 @@ function setTrip(file, definition){
     startDate: null,
     endDate: null,
     flights: [],
-    notes: '',
+    checklist: [],
     visibleCategories: loadVisibleCategories(file)
   };
   categoryOrder = loadCategoryOrder(file);
@@ -2161,18 +2273,18 @@ function setTrip(file, definition){
   }
 
   if (fbDb){
-    fbNotesRef = fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(file) + '/notes');
-    fbNotesRef.on('value', snap => {
+    fbChecklistRef = fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(file) + '/checklist');
+    fbChecklistRef.on('value', snap => {
       if (file !== currentTripFile) return;
       const remote = snap.val();
-      currentTrip.notes = typeof remote === 'string' ? remote : '';
-      localStorage.setItem('tripmap:notes:' + file, currentTrip.notes);
-      if (el('screen-notes').classList.contains('active') && document.activeElement !== el('notesText')){
-        el('notesText').value = currentTrip.notes;
-      }
+      currentTrip.checklist = Array.isArray(remote) ? remote : (remote && typeof remote === 'object') ? Object.values(remote) : [];
+      localStorage.setItem('tripmap:checklist:' + file, JSON.stringify(currentTrip.checklist));
+      renderChecklistViews();
     });
   } else {
-    currentTrip.notes = localStorage.getItem('tripmap:notes:' + file) || '';
+    const saved = localStorage.getItem('tripmap:checklist:' + file);
+    currentTrip.checklist = saved ? JSON.parse(saved) : [];
+    renderChecklistViews();
   }
 
   if (fbDb){
@@ -2318,17 +2430,21 @@ async function boot(){
 
   el('notesItem').addEventListener('click', () => {
     el('menu').classList.remove('open');
-    el('notesText').value = currentTrip.notes || '';
     showScreen('screen-notes');
   });
   el('notesBackBtn').addEventListener('click', () => showScreen('screen-home'));
-  let notesSaveTimer = null;
-  el('notesText').addEventListener('input', e => {
-    currentTrip.notes = e.target.value;
-    clearTimeout(notesSaveTimer);
-    notesSaveTimer = setTimeout(saveNotes, 500);
+  el('notesChecklistForm').addEventListener('submit', e => {
+    e.preventDefault();
+    addChecklistItem(el('notesChecklistInput').value);
+    el('notesChecklistInput').value = '';
+    el('notesChecklistInput').focus();
   });
-  el('notesText').addEventListener('blur', saveNotes);
+  el('sideChecklistForm').addEventListener('submit', e => {
+    e.preventDefault();
+    addChecklistItem(el('sideChecklistInput').value);
+    el('sideChecklistInput').value = '';
+  });
+  el('sideMapCard').addEventListener('click', () => { resetMapView(); showScreen('screen-map'); });
 
   el('recapItem').addEventListener('click', () => {
     el('menu').classList.remove('open');
