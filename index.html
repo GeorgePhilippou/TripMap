@@ -14,6 +14,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Trip Map">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -121,10 +123,16 @@
     box-shadow:0 1px 3px rgba(38,42,28,.04); overflow:hidden;
   }
   .card:hover{ border-color:var(--accent); }
+  .card.has-photo{ background-size:cover; background-position:center; border-color:transparent; justify-content:flex-end; }
   .cat-icon{ width:26px; height:26px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:15px; flex-shrink:0; }
   .card-title{ font-size:14px; font-weight:600; line-height:1.15; }
   .card-count{ font-size:12px; color:var(--muted); line-height:1.15; }
   .chev{ color:var(--muted); font-size:18px; }
+  .pill-skeleton{
+    background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:4px 8px;
+    width:84px; height:19px; animation:pill-pulse 1.3s ease-in-out infinite;
+  }
+  @keyframes pill-pulse{ 0%,100%{ opacity:.5; } 50%{ opacity:1; } }
 
   /* ---- category / list screen ---- */
   .cat-header{ display:flex; align-items:center; gap:10px; padding:calc(10px + env(safe-area-inset-top)) 18px 0; flex-shrink:0; }
@@ -155,10 +163,19 @@
   .place{ padding:14px 18px; border-bottom:1px solid var(--border); cursor:pointer; display:flex; align-items:center; gap:12px; }
   .place:hover{ background:var(--surface); }
   .place.visited .place-name{ text-decoration:line-through; color:var(--muted); }
-  .place-dot{ width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+  .place-dot{
+    width:18px; height:18px; border-radius:50%; flex-shrink:0; position:relative; cursor:pointer;
+    transition:transform .15s ease;
+  }
+  .place-dot:active{ transform:scale(.85); }
+  .place-dot .check-icon{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--surface);
+    opacity:0; transform:scale(.4); transition:opacity .2s ease, transform .2s ease;
+  }
+  .place.visited .place-dot .check-icon{ opacity:1; transform:scale(1); }
   .place-thumb{ width:36px; height:36px; border-radius:8px; object-fit:cover; flex-shrink:0; }
   .place-main{ flex:1; min-width:0; }
-  .place-name{ font-weight:500; font-size:15px; display:block; }
+  .place-name{ font-weight:500; font-size:15px; display:block; transition:color .3s ease; }
   .place-notes{ font-size:12px; color:var(--muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .place-visited-tag{ font-size:11px; color:var(--muted); flex-shrink:0; }
   .empty-hint{ padding:24px 18px; color:var(--muted); font-size:13px; line-height:1.6; text-align:center; }
@@ -178,6 +195,14 @@
     background:var(--surface); box-shadow:0 1px 3px rgba(38,42,28,.3); transition:left .15s;
   }
   .toggle.on .toggle-knob{ left:18px; }
+  .reorder-btns{ display:flex; flex-direction:column; gap:2px; flex-shrink:0; }
+  .reorder-btn{
+    width:22px; height:18px; border-radius:5px; border:1px solid var(--border); background:var(--surface);
+    color:var(--muted); display:flex; align-items:center; justify-content:center; cursor:pointer; padding:0; font-size:9px; line-height:1;
+  }
+  .reorder-btn:hover{ border-color:var(--accent); color:var(--accent); }
+  .reorder-btn:disabled{ opacity:.3; cursor:default; }
+  .reorder-btn:disabled:hover{ border-color:var(--border); color:var(--muted); }
 
   /* ---- map screen ---- */
   #screen-map{ padding-bottom:0; }
@@ -259,17 +284,18 @@
   .btn:hover{ border-color:var(--accent); }
   .btn-danger{ background:var(--danger-bg); border-color:var(--danger-border); color:var(--danger-text); }
   .btn-primary{ background:var(--accent); border-color:var(--accent); color:var(--accent-ink); font-weight:600; }
-  .photo-preview-wrap{ position:relative; width:100%; margin-top:4px; }
-  .photo-preview{ width:100%; max-height:160px; object-fit:cover; border-radius:8px; display:block; }
-  .photo-remove{
-    position:absolute; top:6px; right:6px; width:26px; height:26px; border-radius:50%;
-    background:rgba(0,0,0,.6); color:#fff; border:none; cursor:pointer; font-size:12px;
-  }
   .photo-add-btn{
     margin-top:4px; width:100%; background:var(--surface2); color:var(--text);
     border:1px dashed var(--border); border-radius:8px; padding:10px; font-size:13px; cursor:pointer;
   }
   .photo-add-btn:hover{ border-color:var(--accent); }
+  .photo-gallery{ display:flex; gap:8px; overflow-x:auto; padding-bottom:2px; margin-top:4px; }
+  .photo-gallery-item{ position:relative; flex-shrink:0; width:84px; height:84px; border-radius:8px; overflow:hidden; }
+  .photo-gallery-item img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .photo-gallery-remove{
+    position:absolute; top:4px; right:4px; width:22px; height:22px; border-radius:50%;
+    background:rgba(0,0,0,.6); color:#fff; border:none; cursor:pointer; font-size:11px;
+  }
 
   /* ---- trip menu ---- */
   #menu{ position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; align-items:flex-start; justify-content:center; z-index:1000; }
@@ -332,6 +358,63 @@
   }
   .toast.show{ transform:translateY(0); opacity:1; pointer-events:auto; }
   .toast button{ background:none; border:none; color:inherit; font-weight:700; font-size:13px; cursor:pointer; flex-shrink:0; text-decoration:underline; font-family:inherit; }
+
+  /* ---- marker clusters ---- */
+  .cluster-badge{
+    width:100%; height:100%; border-radius:50%; background:var(--accent); color:var(--accent-ink);
+    display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px;
+    border:3px solid var(--surface); box-shadow:0 2px 8px rgba(0,0,0,.3);
+  }
+
+  /* ---- weather forecast sheet ---- */
+  #weatherSheet{ position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; align-items:flex-end; justify-content:center; z-index:1000; }
+  #weatherSheet.open{ display:flex; }
+  #weatherSheet-box{
+    background:var(--surface); border:1px solid var(--border); border-bottom:none;
+    border-radius:18px 18px 0 0; padding:20px 18px calc(20px + env(safe-area-inset-bottom));
+    width:100%; max-width:480px; display:flex; flex-direction:column; gap:12px;
+  }
+  #weatherSheet-box h3{ font-family:'Fraunces',serif; font-weight:500; margin:0; font-size:19px; }
+  .forecast-row{ display:flex; align-items:center; gap:12px; padding:9px 0; border-bottom:1px solid var(--border); }
+  .forecast-row:last-child{ border-bottom:none; }
+  .forecast-day{ width:70px; font-size:13px; font-weight:600; flex-shrink:0; }
+  .forecast-row svg{ width:20px; height:20px; color:var(--accent); flex-shrink:0; }
+  .forecast-temps{ flex:1; text-align:right; font-size:13px; color:var(--muted); }
+  .forecast-temps b{ color:var(--text); }
+
+  /* ---- trip notes ---- */
+  #notesText{
+    flex:1; width:100%; background:var(--surface2); color:var(--text); border:1px solid var(--border);
+    border-radius:10px; padding:14px; font-size:14px; font-family:inherit; resize:none; margin:0 18px;
+    width:calc(100% - 36px);
+  }
+
+  /* ---- recap screen ---- */
+  .recap-stat{ padding:18px; text-align:center; }
+  .recap-stat .big{ font-family:'Fraunces',serif; font-size:44px; font-weight:500; color:var(--accent); line-height:1; }
+  .recap-stat .label{ font-size:13px; color:var(--muted); margin-top:4px; }
+  .recap-row{ display:flex; align-items:center; gap:10px; padding:10px 18px; }
+  .recap-row .cat-icon{ width:26px; height:26px; font-size:13px; }
+  .recap-row .recap-label{ width:110px; font-size:13px; flex-shrink:0; }
+  .recap-bar-track{ flex:1; height:6px; background:var(--surface2); border-radius:3px; overflow:hidden; }
+  .recap-bar-fill{ height:100%; background:var(--accent); border-radius:3px; }
+  .recap-row .recap-count{ font-size:12px; color:var(--muted); width:44px; text-align:right; flex-shrink:0; }
+
+  /* ---- iPad landscape live overview panel ---- */
+  #sidePanel{ display:none; }
+  @media (min-width:1300px) and (orientation:landscape){
+    body{ gap:20px; }
+    #sidePanel{
+      display:block; width:360px; height:calc(100dvh - 64px); margin:32px 0;
+      border:1px solid var(--border); border-radius:20px; overflow:hidden;
+      box-shadow:0 24px 60px rgba(0,0,0,.14); position:relative;
+    }
+    #sideMap{ width:100%; height:100%; }
+    .side-panel-label{
+      position:absolute; top:14px; left:14px; z-index:500; background:var(--overlay); backdrop-filter:blur(6px);
+      border:1px solid var(--border); border-radius:10px; padding:7px 11px; font-size:12px; font-weight:600;
+    }
+  }
 </style>
 </head>
 <body>
@@ -381,7 +464,10 @@
   <section id="screen-itinerary" class="screen">
     <div class="cat-header">
       <button class="icon-btn" id="itineraryBackBtn">&#8592;</button>
-      <h2>Itinerary</h2>
+      <h2 style="flex:1;">Itinerary</h2>
+      <button class="icon-btn" id="itineraryShareBtn" title="Share itinerary">
+        <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 6.5a2.25 2.25 0 1 0-2.1-3H11.9a2.25 2.25 0 0 0 0 1L6.6 7.5M6.6 7.5a2.25 2.25 0 1 0 0 5M6.6 7.5l5.3 3M6.6 12.5l5.3 3M11.9 15.5a2.25 2.25 0 1 0 2.1 3"/></svg>
+      </button>
     </div>
     <div class="place-list" id="itineraryList"></div>
   </section>
@@ -394,6 +480,24 @@
       <button class="icon-btn" id="flightsAddBtn">+</button>
     </div>
     <div class="place-list" id="flightsList"></div>
+  </section>
+
+  <!-- TRIP NOTES -->
+  <section id="screen-notes" class="screen">
+    <div class="cat-header">
+      <button class="icon-btn" id="notesBackBtn">&#8592;</button>
+      <h2>Trip notes</h2>
+    </div>
+    <textarea id="notesText" placeholder="Booking confirmation numbers, packing list, anything worth keeping handy…"></textarea>
+  </section>
+
+  <!-- TRIP RECAP -->
+  <section id="screen-recap" class="screen">
+    <div class="cat-header">
+      <button class="icon-btn" id="recapBackBtn">&#8592;</button>
+      <h2>Trip recap</h2>
+    </div>
+    <div id="recapContent"></div>
   </section>
 
   <!-- FULL MAP -->
@@ -438,6 +542,11 @@
 
 </div>
 
+<div id="sidePanel">
+  <div class="side-panel-label" id="sidePanelLabel">Trip</div>
+  <div id="sideMap"></div>
+</div>
+
 <!-- EDITOR -->
 <div id="editor">
   <div id="editor-box">
@@ -473,13 +582,10 @@
     </div>
     <button type="button" id="adjustLocationBtn" class="btn" style="display:none; width:100%;">Adjust pin location</button>
     <div>
-      <label>Photo</label>
-      <div id="photoPreviewWrap" class="photo-preview-wrap" style="display:none;">
-        <img id="photoPreview" class="photo-preview">
-        <button type="button" class="photo-remove" id="photoRemoveBtn">&#10005;</button>
-      </div>
+      <label>Photos</label>
+      <div id="photoGallery" class="photo-gallery"></div>
       <button type="button" class="photo-add-btn" id="photoAddBtn">Add photo</button>
-      <input id="f-photo-file" type="file" accept="image/*">
+      <input id="f-photo-file" type="file" accept="image/*" multiple>
     </div>
     <div>
       <label>Notes</label>
@@ -530,6 +636,15 @@
   </div>
 </div>
 
+<!-- WEATHER FORECAST -->
+<div id="weatherSheet">
+  <div id="weatherSheet-box">
+    <h3>5-day forecast</h3>
+    <div id="forecastList"></div>
+    <button class="btn" id="weatherCloseBtn">Close</button>
+  </div>
+</div>
+
 <!-- TRIP MENU -->
 <div id="menu">
   <div id="menu-box">
@@ -540,6 +655,8 @@
     <div class="menu-item" id="flightsItem"><span>Flights</span><span>&#8250;</span></div>
     <div class="menu-item" id="nearestItem"><span>Nearest place</span><span>&#8250;</span></div>
     <div class="menu-item" id="tripDatesItem"><span>Trip dates</span><span>&#8250;</span></div>
+    <div class="menu-item" id="notesItem"><span>Trip notes</span><span>&#8250;</span></div>
+    <div class="menu-item" id="recapItem"><span>Trip recap</span><span>&#8250;</span></div>
     <div class="menu-item" id="catSettingsItem"><span>Homepage categories</span><span>&#8250;</span></div>
     <div class="menu-label">Sharing</div>
     <div class="menu-item" id="roomItem"><span>Sync room</span><span id="roomStatus">&#8250;</span></div>
@@ -553,10 +670,11 @@
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const APP_VERSION = '1.27.0';
+const APP_VERSION = '1.28.0';
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
@@ -570,7 +688,7 @@ const FIREBASE_CONFIG = {
 const DEFAULT_ROOM = 'philippou-megan-8x4q';
 const ROOM_KEY = 'tripmap:room';
 const LOCAL_TRIPS_KEY = 'tripmap:localtrips';
-let fbApp, fbDb, fbRef, fbDatesRef, fbFlightsRef;
+let fbApp, fbDb, fbRef, fbDatesRef, fbFlightsRef, fbNotesRef;
 try {
   fbApp = firebase.initializeApp(FIREBASE_CONFIG);
   fbDb = firebase.database();
@@ -598,10 +716,11 @@ const DEFAULT_VISIBLE_CATEGORIES = CATEGORIES.filter(c => c.key !== 'hike').map(
 const CATEGORY_MIGRATIONS = { hotel:'stays', other:'general' };
 
 let map, markers = {}, currentTrip = null, currentTripFile = null, editingId = null, pendingLatLng = null;
-let heroMap, heroMarkersLayer;
+let heroMap, heroMarkersLayer, sideMap, sideMarkersLayer;
 let searchMarkers = [], lastSearchResults = [], lastOwnMatches = [], lastSearchQuery = '', searchDebounceTimer = null;
-let activeCategory = null, pendingPhoto = null, placing = false;
+let activeCategory = null, pendingPhotos = [], placing = false;
 let sortByDistance = false, lastDeleted = null, undoTimer = null, repositioningId = null, mapCategoryFilter = null;
+let categoryOrder = CATEGORIES.map(c => c.key);
 
 const el = id => document.getElementById(id);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
@@ -712,14 +831,16 @@ function weatherIcon(code){
   if ([95, 96, 99].includes(code)) return svgIcon('<path d="M5 11a3.5 3.5 0 0 1 .3-7A5 5 0 0 1 15 5a3 3 0 0 1-1 5.9H5Z"/><path d="M10 12l-2 4h3l-1 3"/>');
   return svgIcon('<path d="M5 12a3.5 3.5 0 0 1 .3-7A5 5 0 0 1 15 6a3 3 0 0 1-1 5.9H5Z"/>');
 }
-let weatherData = null;
+let weatherData = null, weatherForecast = null, weatherLoading = false;
 async function fetchWeather(){
   weatherData = null;
-  if (!currentTrip || !currentTrip.center) return;
+  weatherForecast = null;
+  weatherLoading = true;
+  if (!currentTrip || !currentTrip.center) { weatherLoading = false; return; }
   const [lat, lng] = currentTrip.center;
   const tripFile = currentTripFile;
   try {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,weather_code&timezone=auto&forecast_days=1`;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,weather_code&timezone=auto&forecast_days=5`;
     const res = await fetch(url);
     const data = await res.json();
     if (tripFile !== currentTripFile) return;
@@ -729,8 +850,57 @@ async function fetchWeather(){
       max: Math.round(data.daily.temperature_2m_max[0]),
       min: Math.round(data.daily.temperature_2m_min[0])
     };
-  } catch (err) { weatherData = null; }
+    weatherForecast = data.daily.time.map((date, i) => ({
+      date,
+      code: data.daily.weather_code[i],
+      max: Math.round(data.daily.temperature_2m_max[i]),
+      min: Math.round(data.daily.temperature_2m_min[i])
+    }));
+  } catch (err) { weatherData = null; weatherForecast = null; }
+  weatherLoading = false;
   if (tripFile === currentTripFile) renderHome();
+}
+function renderForecastSheet(){
+  if (!weatherForecast) return;
+  el('forecastList').innerHTML = weatherForecast.map(day => {
+    const label = new Date(day.date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+    return `<div class="forecast-row">
+      <span class="forecast-day">${label}</span>
+      ${weatherIcon(day.code)}
+      <span class="forecast-temps"><b>${day.max}&deg;</b> / ${day.min}&deg;</span>
+    </div>`;
+  }).join('');
+  el('weatherSheet').classList.add('open');
+}
+function renderRecapScreen(){
+  const total = currentTrip.places.length;
+  const visited = currentTrip.places.filter(p => p.visited).length;
+  const pct = total ? Math.round(visited / total * 100) : 0;
+  const catCounts = CATEGORIES.map(c => {
+    const places = currentTrip.places.filter(p => p.category === c.key);
+    return { c, total: places.length, visited: places.filter(p => p.visited).length };
+  }).filter(x => x.total > 0);
+  const statsHtml = `
+    <div style="display:flex;">
+      <div class="recap-stat" style="flex:1;">
+        <div class="big">${total}</div>
+        <div class="label">Place${total === 1 ? '' : 's'} saved</div>
+      </div>
+      <div class="recap-stat" style="flex:1;">
+        <div class="big">${pct}%</div>
+        <div class="label">${visited} visited</div>
+      </div>
+    </div>`;
+  const rowsHtml = catCounts.map(({ c, total, visited }) => {
+    const rowPct = total ? Math.round(visited / total * 100) : 0;
+    return `<div class="recap-row">
+      <div class="cat-icon" style="background:var(--${c.key}-soft);color:var(--${c.key})">${c.icon}</div>
+      <div class="recap-label">${c.label}</div>
+      <div class="recap-bar-track"><div class="recap-bar-fill" style="width:${rowPct}%;background:var(--${c.key});"></div></div>
+      <div class="recap-count">${visited}/${total}</div>
+    </div>`;
+  }).join('');
+  el('recapContent').innerHTML = statsHtml + (rowsHtml || `<div style="padding:18px;text-align:center;color:var(--muted);">No places saved yet.</div>`);
 }
 function sharePlace(p){
   const cat = CAT_BY_KEY[p.category];
@@ -777,9 +947,29 @@ function loadVisibleCategories(file){
 function saveVisibleCategories(file, arr){
   localStorage.setItem('tripmap:visible:' + file, JSON.stringify(arr));
 }
+function loadCategoryOrder(file){
+  const allKeys = CATEGORIES.map(c => c.key);
+  const saved = localStorage.getItem('tripmap:order:' + file);
+  const order = saved ? JSON.parse(saved) : allKeys.slice();
+  // Reconcile against the current category list, in case it's changed since
+  // this order was saved: drop stale keys, append any new ones at the end.
+  const cleaned = order.filter(k => allKeys.includes(k));
+  allKeys.forEach(k => { if (!cleaned.includes(k)) cleaned.push(k); });
+  return cleaned;
+}
+function saveCategoryOrder(file, arr){
+  localStorage.setItem('tripmap:order:' + file, JSON.stringify(arr));
+}
 function loadLocalDates(file){
   const saved = localStorage.getItem('tripmap:dates:' + file);
   return saved ? JSON.parse(saved) : { start: null, end: null };
+}
+function saveNotes(){
+  const notes = currentTrip.notes || '';
+  localStorage.setItem('tripmap:notes:' + currentTripFile, notes);
+  if (fbDb){
+    fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(currentTripFile) + '/notes').set(notes);
+  }
 }
 function saveDates(){
   const dates = { start: currentTrip.startDate || null, end: currentTrip.endDate || null };
@@ -821,6 +1011,11 @@ function migratePlaces(places){
     if (p.locality !== undefined && p.localityV !== LOCALITY_FORMAT_VERSION){
       delete p.locality; // re-resolve under the improved area-name logic
       p.localityV = LOCALITY_FORMAT_VERSION;
+      changed = true;
+    }
+    if (!p.photos){
+      p.photos = p.photo ? [p.photo] : [];
+      delete p.photo;
       changed = true;
     }
   });
@@ -871,10 +1066,21 @@ function resetMapView(){
 const TILE_URL = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
 const TILE_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
+let markerClusterGroup;
 function initMap(){
   map = L.map('map', { zoomControl: false });
   L.control.zoom({ position: 'bottomright' }).addTo(map);
   L.tileLayer(TILE_URL, { maxZoom: 20, attribution: TILE_ATTRIBUTION }).addTo(map);
+  markerClusterGroup = L.markerClusterGroup({
+    maxClusterRadius: 50,
+    spiderfyOnMaxZoom: true,
+    iconCreateFunction: cluster => L.divIcon({
+      className: 'leaflet-div-icon',
+      html: `<div class="cluster-badge">${cluster.getChildCount()}</div>`,
+      iconSize: [36, 36]
+    })
+  });
+  map.addLayer(markerClusterGroup);
 
   const LocateControl = L.Control.extend({
     options: { position: 'bottomright' },
@@ -956,6 +1162,33 @@ function updateHeroMap(){
   // the real view straight after is what actually keeps it centered on the
   // trip rather than trusting invalidateSize's own pan compensation.
   setTimeout(() => { heroMap.invalidateSize(); applyView(); }, 120);
+}
+function initSideMap(){
+  sideMap = L.map('sideMap', {
+    zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false,
+    doubleClickZoom: false, boxZoom: false, keyboard: false, touchZoom: false, tap: false, fadeAnimation: false
+  });
+  L.tileLayer(TILE_URL, { maxZoom: 20 }).addTo(sideMap);
+  sideMarkersLayer = L.layerGroup().addTo(sideMap);
+}
+function updateSideMap(){
+  if (!sideMap) return;
+  el('sidePanelLabel').textContent = currentTrip.name || 'Trip';
+  sideMarkersLayer.clearLayers();
+  currentTrip.places.forEach(p => {
+    const color = categoryColor(p.category);
+    L.circleMarker([p.lat, p.lng], { radius: 5, color: cssVar('--surface', '--surface'), weight: 1.5, fillColor: color, fillOpacity: 1 }).addTo(sideMarkersLayer);
+  });
+  const applyView = () => {
+    if (currentTrip.bounds) sideMap.fitBounds(currentTrip.bounds, { animate: false, maxZoom: 16, padding: [20, 20] });
+    else sideMap.setView(currentTrip.center || [20, 0], currentTrip.zoom || 4, { animate: false });
+  };
+  applyView();
+  // Same invalidateSize-then-reapply defensive pattern as updateHeroMap(): the
+  // side panel is only ever display:none/flex toggled by a media query, so its
+  // very first layout pass can settle after this runs, leaving Leaflet's initial
+  // size measurement stale.
+  setTimeout(() => { sideMap.invalidateSize(); applyView(); }, 120);
 }
 function startPlacing(){
   placing = true;
@@ -1243,11 +1476,11 @@ function renderMapLegend(){
   }
 }
 function renderMarkers(){
-  Object.values(markers).forEach(m => map.removeLayer(m));
+  markerClusterGroup.clearLayers();
   markers = {};
   currentTrip.places.filter(p => !mapCategoryFilter || p.category === mapCategoryFilter).forEach(p => {
-    const m = L.marker([p.lat, p.lng], { icon: pinIcon(p.category) }).addTo(map);
-    const thumb = p.photo ? `<img src="${p.photo}" style="width:100%;max-width:180px;height:90px;object-fit:cover;border-radius:8px;margin-bottom:6px;display:block;">` : '';
+    const m = L.marker([p.lat, p.lng], { icon: pinIcon(p.category) });
+    const thumb = p.photos && p.photos[0] ? `<img src="${p.photos[0]}" style="width:100%;max-width:180px;height:90px;object-fit:cover;border-radius:8px;margin-bottom:6px;display:block;">` : '';
     const cat = CAT_BY_KEY[p.category];
     m.bindPopup(`
       <div class="map-popup">
@@ -1259,15 +1492,19 @@ function renderMarkers(){
           <a class="map-popup-btn secondary" href="${directionsUrl(p.lat, p.lng)}" target="_blank" rel="noopener">Directions</a>
         </div>
       </div>`);
+    markerClusterGroup.addLayer(m);
     markers[p.id] = m;
   });
 }
 
 /* ---- home ---- */
 function renderHome(){
-  const visibleCats = CATEGORIES.filter(c => currentTrip.visibleCategories.includes(c.key));
+  const orderedCats = categoryOrder.map(k => CAT_BY_KEY[k]).filter(Boolean);
+  CATEGORIES.forEach(c => { if (!orderedCats.includes(c)) orderedCats.push(c); });
+  const visibleCats = orderedCats.filter(c => currentTrip.visibleCategories.includes(c.key));
   const rows = visibleCats.length ? Math.ceil(visibleCats.length / 2) : 1;
   document.documentElement.style.setProperty('--hero-h', Math.max(9, 27 - rows * 3.2) + 'vh');
+  updateSideMap();
 
   el('tripName').textContent = currentTrip.name || 'Trip';
   const countdown = computeCountdownText(currentTrip.startDate, currentTrip.endDate);
@@ -1286,7 +1523,9 @@ function renderHome(){
 
   const pills = [];
   if (weatherData){
-    pills.push(`<div class="info-pill">${weatherIcon(weatherData.code)}<span>${weatherData.current}&deg; &middot; H:${weatherData.max}&deg; L:${weatherData.min}&deg;</span></div>`);
+    pills.push(`<div class="info-pill clickable" id="weatherPill">${weatherIcon(weatherData.code)}<span>${weatherData.current}&deg; &middot; H:${weatherData.max}&deg; L:${weatherData.min}&deg;</span></div>`);
+  } else if (weatherLoading){
+    pills.push(`<div class="pill-skeleton"></div>`);
   }
   const upcomingFlight = nextUpcomingFlight();
   if (upcomingFlight){
@@ -1299,6 +1538,9 @@ function renderHome(){
     pills.push(`<div class="info-pill clickable" id="recentActivityPill"><span class="activity-dot"></span><span>${escapeHtml(recent.addedBy || 'Someone')} added <b>${escapeHtml(recent.name)}</b> &middot; ${formatRelativeTime(recent.addedAt)}</span></div>`);
   }
   el('infoStrip').innerHTML = pills.join('');
+  if (weatherData){
+    el('weatherPill').addEventListener('click', renderForecastSheet);
+  }
   if (upcomingFlight){
     el('flightPill').addEventListener('click', () => openFlightEditor(upcomingFlight.id));
   }
@@ -1308,8 +1550,8 @@ function renderHome(){
 
   const next = currentTrip.places.find(p => !p.visited);
   const heroPhoto = el('heroPhoto');
-  if (next && next.photo){
-    heroPhoto.style.backgroundImage = `linear-gradient(160deg, rgba(0,0,0,.1), rgba(0,0,0,.55)), url(${next.photo})`;
+  if (next && next.photos && next.photos[0]){
+    heroPhoto.style.backgroundImage = `linear-gradient(160deg, rgba(0,0,0,.1), rgba(0,0,0,.55)), url(${next.photos[0]})`;
     heroPhoto.style.display = 'block';
   } else {
     heroPhoto.style.display = 'none';
@@ -1332,13 +1574,22 @@ function renderHome(){
   }
   grid.style.gridTemplateRows = `repeat(${Math.ceil(visibleCats.length / 2)}, minmax(0,1fr))`;
   visibleCats.forEach(c => {
-    const count = currentTrip.places.filter(p => p.category === c.key).length;
+    const catPlaces = currentTrip.places.filter(p => p.category === c.key);
+    const count = catPlaces.length;
+    const photoPlace = catPlaces.find(p => p.photos && p.photos[0]);
     const card = document.createElement('div');
-    card.className = 'card';
-    card.innerHTML = `
-      <div class="cat-icon" style="background:var(--${c.key}-soft);color:var(--${c.key})">${c.icon}</div>
-      <div class="card-title">${c.label}</div>
-      <div class="card-count">${count} place${count===1?'':'s'}</div>`;
+    card.className = 'card' + (photoPlace ? ' has-photo' : '');
+    if (photoPlace){
+      card.style.backgroundImage = `linear-gradient(165deg, rgba(0,0,0,.1), rgba(0,0,0,.6)), url(${photoPlace.photos[0]})`;
+      card.innerHTML = `
+        <div class="card-title" style="color:#fff;">${c.label}</div>
+        <div class="card-count" style="color:rgba(255,255,255,.85);">${count} place${count===1?'':'s'}</div>`;
+    } else {
+      card.innerHTML = `
+        <div class="cat-icon" style="background:var(--${c.key}-soft);color:var(--${c.key})">${c.icon}</div>
+        <div class="card-title">${c.label}</div>
+        <div class="card-count">${count} place${count===1?'':'s'}</div>`;
+    }
     card.addEventListener('click', () => openCategory(c.key));
     grid.appendChild(card);
   });
@@ -1347,17 +1598,38 @@ function renderHome(){
 function renderCatSettings(){
   const list = el('catSettingsList');
   list.innerHTML = '';
-  CATEGORIES.forEach(c => {
+  const orderedKeys = categoryOrder.filter(k => CAT_BY_KEY[k]);
+  CATEGORIES.forEach(c => { if (!orderedKeys.includes(c.key)) orderedKeys.push(c.key); });
+  orderedKeys.forEach((key, i) => {
+    const c = CAT_BY_KEY[key];
     const visible = currentTrip.visibleCategories.includes(c.key);
     const row = document.createElement('div');
     row.className = 'settings-row';
     row.innerHTML = `
+      <div class="reorder-btns">
+        <button class="reorder-btn" ${i === 0 ? 'disabled' : ''} aria-label="Move up">&#9650;</button>
+        <button class="reorder-btn" ${i === orderedKeys.length - 1 ? 'disabled' : ''} aria-label="Move down">&#9660;</button>
+      </div>
       <div class="cat-icon" style="background:var(--${c.key}-soft);color:var(--${c.key})">${c.icon}</div>
       <div class="settings-label">${c.label}</div>
       <div class="toggle ${visible ? 'on' : ''}"><div class="toggle-knob"></div></div>`;
+    row.querySelectorAll('.reorder-btn')[0].addEventListener('click', () => moveCategory(c.key, -1));
+    row.querySelectorAll('.reorder-btn')[1].addEventListener('click', () => moveCategory(c.key, 1));
     row.querySelector('.toggle').addEventListener('click', () => toggleCategoryVisible(c.key));
     list.appendChild(row);
   });
+}
+function moveCategory(key, direction){
+  const orderedKeys = categoryOrder.filter(k => CAT_BY_KEY[k]);
+  CATEGORIES.forEach(c => { if (!orderedKeys.includes(c.key)) orderedKeys.push(c.key); });
+  const idx = orderedKeys.indexOf(key);
+  const swapIdx = idx + direction;
+  if (idx < 0 || swapIdx < 0 || swapIdx >= orderedKeys.length) return;
+  [orderedKeys[idx], orderedKeys[swapIdx]] = [orderedKeys[swapIdx], orderedKeys[idx]];
+  categoryOrder = orderedKeys;
+  saveCategoryOrder(currentTripFile, categoryOrder);
+  renderCatSettings();
+  renderHome();
 }
 function toggleCategoryVisible(key){
   const idx = currentTrip.visibleCategories.indexOf(key);
@@ -1372,14 +1644,25 @@ function toggleCategoryVisible(key){
 function renderCatBanner(key){
   const cat = CAT_BY_KEY[key];
   const banner = el('catBanner');
-  const withPhoto = currentTrip.places.find(p => p.category === key && p.photo);
+  const withPhoto = currentTrip.places.find(p => p.category === key && p.photos && p.photos[0]);
   if (withPhoto){
-    banner.style.backgroundImage = `linear-gradient(180deg, rgba(0,0,0,.05), rgba(0,0,0,.4)), url(${withPhoto.photo})`;
+    banner.style.backgroundImage = `linear-gradient(180deg, rgba(0,0,0,.05), rgba(0,0,0,.4)), url(${withPhoto.photos[0]})`;
     el('catBannerIcon').innerHTML = '';
   } else {
     banner.style.backgroundImage = `linear-gradient(135deg, var(--${key}), var(--${key}-soft))`;
     el('catBannerIcon').innerHTML = cat.icon;
   }
+}
+const CHECK_ICON = '<svg class="check-icon" viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3 3 7-7"/></svg>';
+function toggleVisitedInline(p, div, refreshFn){
+  p.visited = !p.visited;
+  div.classList.toggle('visited', p.visited);
+  saveTrip();
+  renderHome();
+  // Let the tap-to-check animation actually play before the list re-sorts
+  // the row out from under it (unvisited-first sort would otherwise move
+  // it away immediately).
+  setTimeout(refreshFn, 650);
 }
 function renderPlaceRow(p){
   const div = document.createElement('div');
@@ -1387,14 +1670,22 @@ function renderPlaceRow(p){
   const metaParts = [];
   if (p.notes) metaParts.push(escapeHtml(p.notes));
   if (userLatLng) metaParts.push(`${formatDistance(distanceKm(userLatLng[0], userLatLng[1], p.lat, p.lng))} away`);
+  const photo = p.photos && p.photos[0];
   div.innerHTML = `
-    ${p.photo ? `<img class="place-thumb" src="${p.photo}">` : `<span class="place-dot" style="background:var(--${p.category})"></span>`}
+    ${photo ? `<img class="place-thumb" src="${photo}">` : `<span class="place-dot" style="background:var(--${p.category})">${CHECK_ICON}</span>`}
     <div class="place-main">
       <span class="place-name">${escapeHtml(p.name)}</span>
       ${metaParts.length ? `<div class="place-notes">${metaParts.join(' &middot; ')}</div>` : ''}
     </div>
     ${p.visited ? '<span class="place-visited-tag">Been</span>' : ''}
     <span class="chev">&#8250;</span>`;
+  const dot = div.querySelector('.place-dot');
+  if (dot){
+    dot.addEventListener('click', e => {
+      e.stopPropagation();
+      toggleVisitedInline(p, div, () => { if (activeCategory) openCategory(activeCategory); });
+    });
+  }
   div.addEventListener('click', () => openEditor(p.id));
   return div;
 }
@@ -1454,16 +1745,47 @@ function renderItineraryRow(p){
   const cat = CAT_BY_KEY[p.category];
   const div = document.createElement('div');
   div.className = 'place' + (p.visited ? ' visited' : '');
+  const photo = p.photos && p.photos[0];
   div.innerHTML = `
-    ${p.photo ? `<img class="place-thumb" src="${p.photo}">` : `<span class="place-dot" style="background:var(--${p.category})"></span>`}
+    ${photo ? `<img class="place-thumb" src="${photo}">` : `<span class="place-dot" style="background:var(--${p.category})">${CHECK_ICON}</span>`}
     <div class="place-main">
       <span class="place-name">${escapeHtml(p.name)}</span>
       <div class="place-notes">${cat ? cat.label : ''}</div>
     </div>
     ${p.visited ? '<span class="place-visited-tag">Been</span>' : ''}
     <span class="chev">&#8250;</span>`;
+  const dot = div.querySelector('.place-dot');
+  if (dot){
+    dot.addEventListener('click', e => {
+      e.stopPropagation();
+      toggleVisitedInline(p, div, renderItinerary);
+    });
+  }
   div.addEventListener('click', () => openEditor(p.id));
   return div;
+}
+function shareItinerary(){
+  const grouped = {};
+  currentTrip.places.forEach(p => { if (p.day) (grouped[p.day] = grouped[p.day] || []).push(p); });
+  const days = Object.keys(grouped).map(Number).sort((a, b) => a - b);
+  if (!days.length){ alert('No itinerary days set yet — open a place and set a Day first.'); return; }
+  let text = `${currentTrip.name} Itinerary\n\n`;
+  days.forEach(day => {
+    text += `Day ${day}\n`;
+    grouped[day].forEach(p => { text += `- ${p.name}${p.locality ? ' (' + p.locality + ')' : ''}\n`; });
+    text += '\n';
+  });
+  text = text.trim();
+  if (navigator.share){
+    navigator.share({ title: `${currentTrip.name} Itinerary`, text }).catch(() => {});
+  } else if (navigator.clipboard){
+    navigator.clipboard.writeText(text).then(
+      () => alert('Itinerary copied to clipboard.'),
+      () => alert(text)
+    );
+  } else {
+    alert(text);
+  }
 }
 function renderItinerary(){
   const grouped = {};
@@ -1626,14 +1948,18 @@ function deleteFlight(){
   closeFlightEditor();
 }
 function updatePhotoPreview(){
-  if (pendingPhoto){
-    el('photoPreviewWrap').style.display = 'block';
-    el('photoPreview').src = pendingPhoto;
-    el('photoAddBtn').style.display = 'none';
-  } else {
-    el('photoPreviewWrap').style.display = 'none';
-    el('photoAddBtn').style.display = 'block';
-  }
+  const gallery = el('photoGallery');
+  gallery.innerHTML = '';
+  pendingPhotos.forEach((photo, i) => {
+    const item = document.createElement('div');
+    item.className = 'photo-gallery-item';
+    item.innerHTML = `<img src="${photo}"><button type="button" class="photo-gallery-remove">&#10005;</button>`;
+    item.querySelector('.photo-gallery-remove').addEventListener('click', () => {
+      pendingPhotos.splice(i, 1);
+      updatePhotoPreview();
+    });
+    gallery.appendChild(item);
+  });
 }
 function openEditor(id, latlng){
   editingId = id;
@@ -1648,7 +1974,7 @@ function openEditor(id, latlng){
     el('f-visited').value = '0';
     el('f-day').value = '';
     el('f-notes').value = '';
-    pendingPhoto = null;
+    pendingPhotos = [];
     if (pendingLatLng){ lat = pendingLatLng.lat; lng = pendingLatLng.lng; }
   } else {
     const p = currentTrip.places.find(p => p.id === id);
@@ -1657,7 +1983,7 @@ function openEditor(id, latlng){
     el('f-visited').value = p.visited ? '1' : '0';
     el('f-day').value = p.day || '';
     el('f-notes').value = p.notes || '';
-    pendingPhoto = p.photo || null;
+    pendingPhotos = p.photos ? p.photos.slice() : [];
     lat = p.lat; lng = p.lng;
   }
   const dirBtn = el('directionsBtn');
@@ -1685,7 +2011,7 @@ function closeEditor(){
   el('editor').classList.remove('open');
   editingId = null;
   pendingLatLng = null;
-  pendingPhoto = null;
+  pendingPhotos = [];
 }
 function saveEditor(){
   const name = el('f-name').value.trim();
@@ -1697,7 +2023,7 @@ function saveEditor(){
     visited: el('f-visited').value === '1',
     day: dayVal ? parseInt(dayVal, 10) : null,
     notes: el('f-notes').value.trim(),
-    photo: pendingPhoto
+    photos: pendingPhotos
   };
   if (editingId){
     Object.assign(currentTrip.places.find(p => p.id === editingId), data);
@@ -1752,6 +2078,7 @@ function setTrip(file, definition){
   if (fbRef) { fbRef.off(); fbRef = null; }
   if (fbDatesRef) { fbDatesRef.off(); fbDatesRef = null; }
   if (fbFlightsRef) { fbFlightsRef.off(); fbFlightsRef = null; }
+  if (fbNotesRef) { fbNotesRef.off(); fbNotesRef = null; }
   clearSearchResults();
   el('search').value = '';
   mapCategoryFilter = null;
@@ -1767,8 +2094,10 @@ function setTrip(file, definition){
     startDate: null,
     endDate: null,
     flights: [],
+    notes: '',
     visibleCategories: loadVisibleCategories(file)
   };
+  categoryOrder = loadCategoryOrder(file);
   resetMapView();
   renderMapLegend();
   renderMarkers();
@@ -1810,6 +2139,21 @@ function setTrip(file, definition){
     const saved = localStorage.getItem('tripmap:flights:' + file);
     currentTrip.flights = saved ? JSON.parse(saved) : [];
     renderHome();
+  }
+
+  if (fbDb){
+    fbNotesRef = fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(file) + '/notes');
+    fbNotesRef.on('value', snap => {
+      if (file !== currentTripFile) return;
+      const remote = snap.val();
+      currentTrip.notes = typeof remote === 'string' ? remote : '';
+      localStorage.setItem('tripmap:notes:' + file, currentTrip.notes);
+      if (el('screen-notes').classList.contains('active') && document.activeElement !== el('notesText')){
+        el('notesText').value = currentTrip.notes;
+      }
+    });
+  } else {
+    currentTrip.notes = localStorage.getItem('tripmap:notes:' + file) || '';
   }
 
   if (fbDb){
@@ -1856,6 +2200,7 @@ async function boot(){
   renderMapLegend();
   initMap();
   initHeroMap();
+  initSideMap();
   const files = await loadTripList();
   const startFile = files[0];
   const definition = await loadTripDefinition(startFile, files);
@@ -1952,6 +2297,34 @@ async function boot(){
   });
   el('catSettingsBackBtn').addEventListener('click', () => showScreen('screen-home'));
 
+  el('notesItem').addEventListener('click', () => {
+    el('menu').classList.remove('open');
+    el('notesText').value = currentTrip.notes || '';
+    showScreen('screen-notes');
+  });
+  el('notesBackBtn').addEventListener('click', () => showScreen('screen-home'));
+  let notesSaveTimer = null;
+  el('notesText').addEventListener('input', e => {
+    currentTrip.notes = e.target.value;
+    clearTimeout(notesSaveTimer);
+    notesSaveTimer = setTimeout(saveNotes, 500);
+  });
+  el('notesText').addEventListener('blur', saveNotes);
+
+  el('recapItem').addEventListener('click', () => {
+    el('menu').classList.remove('open');
+    renderRecapScreen();
+    showScreen('screen-recap');
+  });
+  el('recapBackBtn').addEventListener('click', () => showScreen('screen-home'));
+
+  el('itineraryShareBtn').addEventListener('click', shareItinerary);
+
+  el('weatherCloseBtn').addEventListener('click', () => el('weatherSheet').classList.remove('open'));
+  el('weatherSheet').addEventListener('click', e => {
+    if (e.target === el('weatherSheet')) el('weatherSheet').classList.remove('open');
+  });
+
   el('roomStatus').textContent = fbDb ? getRoom() : 'offline';
   el('roomItem').addEventListener('click', () => {
     const current = getRoom();
@@ -1964,16 +2337,13 @@ async function boot(){
   });
 
   el('photoAddBtn').addEventListener('click', () => el('f-photo-file').click());
-  el('photoRemoveBtn').addEventListener('click', () => {
-    pendingPhoto = null;
-    el('f-photo-file').value = '';
-    updatePhotoPreview();
-  });
   el('f-photo-file').addEventListener('change', async e => {
-    const file = e.target.files[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
     try {
-      pendingPhoto = await resizeImageFile(file, 1000, 0.72);
+      for (const file of files){
+        pendingPhotos.push(await resizeImageFile(file, 1000, 0.72));
+      }
       updatePhotoPreview();
     } catch (err) {
       alert('Could not read that photo: ' + err.message);
@@ -2167,6 +2537,7 @@ async function boot(){
     resizeDebounce = setTimeout(() => {
       if (map) map.invalidateSize();
       if (heroMap) updateHeroMap();
+      if (sideMap) updateSideMap();
     }, 150);
   });
 }
