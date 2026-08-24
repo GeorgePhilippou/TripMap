@@ -199,6 +199,9 @@
   .search-result-row{ padding:10px 12px; font-size:13px; cursor:pointer; border-bottom:1px solid var(--border); }
   .search-result-row:last-child{ border-bottom:none; }
   .search-result-row:hover{ background:var(--surface2); }
+  .search-result-own{ display:flex; align-items:center; gap:8px; }
+  .search-result-dot{ width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+  .search-group-label{ padding:6px 12px 3px; font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
   .search-pin{
     width:15px; height:15px; border-radius:50%; background:var(--accent);
     border:2px solid var(--accent-ink); box-shadow:0 1px 4px rgba(0,0,0,.35);
@@ -504,7 +507,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const APP_VERSION = '1.22.1';
+const APP_VERSION = '1.23.0';
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
@@ -547,7 +550,7 @@ const CATEGORY_MIGRATIONS = { hotel:'stays', other:'general' };
 
 let map, markers = {}, currentTrip = null, currentTripFile = null, editingId = null, pendingLatLng = null;
 let heroMap, heroMarkersLayer;
-let searchMarkers = [], lastSearchResults = [], lastSearchQuery = '', searchDebounceTimer = null;
+let searchMarkers = [], lastSearchResults = [], lastOwnMatches = [], lastSearchQuery = '', searchDebounceTimer = null;
 let activeCategory = null, pendingPhoto = null, placing = false;
 let sortByDistance = false, lastDeleted = null, undoTimer = null, repositioningId = null, mapCategoryFilter = null;
 
@@ -803,8 +806,16 @@ function showScreen(id){
 }
 function resetMapView(){
   if (!currentTrip) return;
-  if (currentTrip.bounds) map.fitBounds(currentTrip.bounds, { maxZoom: 15 });
-  else map.setView(currentTrip.center, currentTrip.zoom);
+  // A marker popup left open from a previous visit (e.g. tapped a pin, then
+  // navigated away without closing it) keeps Leaflet's popup auto-pan active
+  // in the background, and an *animated* setView/fitBounds reports its
+  // in-between (not final) position from getCenter() until the animation
+  // finishes - either one on its own can let the view settle somewhere
+  // other than the trip's own framing. animate:false makes this land on
+  // the exact target synchronously, with nothing left to race against.
+  map.closePopup();
+  if (currentTrip.bounds) map.fitBounds(currentTrip.bounds, { maxZoom: 15, animate: false });
+  else map.setView(currentTrip.center, currentTrip.zoom, { animate: false });
 }
 
 /* ---- map ---- */
@@ -945,6 +956,7 @@ function clearSearchMarkers(){
 function clearSearchResults(){
   clearSearchMarkers();
   lastSearchResults = [];
+  lastOwnMatches = [];
   el('searchResults').classList.remove('show');
   el('searchResults').innerHTML = '';
 }
@@ -1056,34 +1068,89 @@ function handleSharedLaunch(){
     runSearch(searchText);
   }
 }
-function renderSearchResults(results){
+function searchOwnPlaces(query){
+  const q = query.toLowerCase().trim();
+  if (!q || !currentTrip) return [];
+  return currentTrip.places
+    .filter(p => p.name.toLowerCase().includes(q))
+    .sort((a, b) => {
+      const aStarts = a.name.toLowerCase().startsWith(q) ? 0 : 1;
+      const bStarts = b.name.toLowerCase().startsWith(q) ? 0 : 1;
+      return aStarts !== bStarts ? aStarts - bStarts : a.name.localeCompare(b.name);
+    });
+}
+function renderSearchResults(ownMatches, externalResults){
   clearSearchMarkers();
   const box = el('searchResults');
-  if (!results.length){ box.classList.remove('show'); box.innerHTML = ''; return; }
+  if (!ownMatches.length && !externalResults.length){ box.classList.remove('show'); box.innerHTML = ''; return; }
   box.innerHTML = '';
-  results.forEach(r => {
-    const row = document.createElement('div');
-    row.className = 'search-result-row';
-    row.textContent = r.display_name.split(',').slice(0, 3).join(',');
-    row.addEventListener('click', () => selectSearchResult(r));
-    box.appendChild(row);
+  if (ownMatches.length){
+    if (externalResults.length){
+      const label = document.createElement('div');
+      label.className = 'search-group-label';
+      label.textContent = 'Your places';
+      box.appendChild(label);
+    }
+    ownMatches.forEach(p => {
+      const row = document.createElement('div');
+      row.className = 'search-result-row search-result-own';
+      row.innerHTML = `<span class="search-result-dot" style="background:var(--${p.category})"></span><span>${escapeHtml(p.name)}</span>`;
+      row.addEventListener('click', () => {
+        clearSearchResults();
+        el('search').value = '';
+        map.flyTo([p.lat, p.lng], 16);
+        openEditor(p.id);
+      });
+      box.appendChild(row);
+    });
+  }
+  if (externalResults.length){
+    if (ownMatches.length){
+      const label = document.createElement('div');
+      label.className = 'search-group-label';
+      label.textContent = 'Add new';
+      box.appendChild(label);
+    }
+    externalResults.forEach(r => {
+      const row = document.createElement('div');
+      row.className = 'search-result-row';
+      row.textContent = r.display_name.split(',').slice(0, 3).join(',');
+      row.addEventListener('click', () => selectSearchResult(r));
+      box.appendChild(row);
 
-    const marker = L.marker([parseFloat(r.lat), parseFloat(r.lon)], { icon: searchPinIcon() }).addTo(map);
-    marker.on('click', () => selectSearchResult(r));
-    searchMarkers.push(marker);
-  });
+      const marker = L.marker([parseFloat(r.lat), parseFloat(r.lon)], { icon: searchPinIcon() }).addTo(map);
+      marker.on('click', () => selectSearchResult(r));
+      searchMarkers.push(marker);
+    });
+  }
   box.classList.add('show');
+}
+function autoSelectIfSingle(){
+  if (lastOwnMatches.length + lastSearchResults.length !== 1) return false;
+  if (lastOwnMatches.length === 1){
+    const p = lastOwnMatches[0];
+    clearSearchResults();
+    el('search').value = '';
+    map.flyTo([p.lat, p.lng], 16);
+    openEditor(p.id);
+  } else {
+    selectSearchResult(lastSearchResults[0]);
+  }
+  return true;
 }
 async function runSearch(query){
   lastSearchQuery = query;
-  if (!query || query.length < 2){ clearSearchResults(); return; }
+  if (!query || query.length < 2){ clearSearchResults(); lastOwnMatches = []; return; }
+  lastOwnMatches = searchOwnPlaces(query);
+  renderSearchResults(lastOwnMatches, []); // instant feedback from saved places while the geocoder is still loading
   const [west, north, east, south] = getTripViewbox();
   const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=6'
     + '&viewbox=' + [west, north, east, south].join(',') + '&bounded=1&q=' + encodeURIComponent(query);
   let results = [];
   try { results = await (await fetch(url)).json(); } catch (err) { results = []; }
+  if (lastSearchQuery !== query) return; // superseded by a newer keystroke
   lastSearchResults = results;
-  renderSearchResults(results);
+  renderSearchResults(lastOwnMatches, results);
 }
 function pinIcon(cat){
   const color = categoryColor(cat);
@@ -1900,13 +1967,14 @@ async function boot(){
     if (handleParsedLocation(parsed)) return;
     const q = (parsed && parsed.query) || raw;
     el('search').value = q;
-    if (lastSearchQuery === q && lastSearchResults.length){
-      if (lastSearchResults.length === 1) selectSearchResult(lastSearchResults[0]);
-      return; // multiple candidates - leave the dropdown open so the right one can be tapped
+    if (lastSearchQuery === q){
+      autoSelectIfSingle(); // 0 or multiple candidates: nothing to do, or leave the dropdown open to pick
+      return;
     }
     await runSearch(q);
-    if (lastSearchResults.length === 1) selectSearchResult(lastSearchResults[0]);
-    else if (!lastSearchResults.length) alert('No results for "' + q + '"');
+    if (!autoSelectIfSingle() && !lastOwnMatches.length && !lastSearchResults.length){
+      alert('No results for "' + q + '"');
+    }
   });
 
   handleSharedLaunch();
