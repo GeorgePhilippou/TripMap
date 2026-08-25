@@ -35,6 +35,7 @@
     --hike:#65588F;       --hike-soft:#E1DCF0;
     --overlay:rgba(250,248,239,.85);
     --danger-bg:#F5DEDB; --danger-border:#E0B7B1; --danger-text:#9A3E33;
+    --desk-bg:#E7E4D2;
   }
   *{box-sizing:border-box;}
   html,body{height:100%;margin:0;overscroll-behavior:none;}
@@ -48,7 +49,7 @@
     border-left:1px solid var(--border); border-right:1px solid var(--border); overflow:hidden; }
 
   @media (min-width:760px){
-    body{ align-items:center; background:var(--surface2); }
+    body{ align-items:center; background:var(--desk-bg); }
     #app{
       max-width:640px; height:calc(100dvh - 64px); margin:32px 0;
       border:1px solid var(--border); border-radius:20px;
@@ -75,7 +76,7 @@
   /* ---- top bar (shared) ---- */
   .topbar{ display:flex; align-items:center; justify-content:flex-end; padding:calc(10px + env(safe-area-inset-top)) 18px 0; flex-shrink:0; }
   .icon-btn{
-    background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:10px;
+    background:var(--accent-soft); border:1px solid var(--accent-soft); color:var(--accent); border-radius:10px;
     width:34px; height:34px; font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center;
   }
   .icon-btn:hover{ border-color:var(--accent); }
@@ -127,7 +128,7 @@
   .cat-icon{ width:26px; height:26px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:15px; flex-shrink:0; }
   .card-title{ font-size:14px; font-weight:600; line-height:1.15; }
   .card-count{ font-size:12px; color:var(--muted); line-height:1.15; }
-  .chev{ color:var(--muted); font-size:18px; }
+  .chev{ color:var(--accent); opacity:.55; font-size:18px; }
   .pill-skeleton{
     background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:4px 8px;
     width:84px; height:19px; animation:pill-pulse 1.3s ease-in-out infinite;
@@ -157,8 +158,7 @@
     border-radius:10px; padding:9px 12px; font-size:13px; font-family:inherit;
   }
   .area-sublabel{ font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; padding:10px 18px 4px; font-weight:600; }
-  #catSortBtn{ color:var(--accent); }
-  #catSortBtn.active{ color:var(--accent-ink); }
+  #catSortBtn.active{ background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
   .place-list{ margin-top:8px; }
   .place{ padding:14px 18px; border-bottom:1px solid var(--border); cursor:pointer; display:flex; align-items:center; gap:12px; }
   .place:hover{ background:var(--surface); }
@@ -736,7 +736,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const APP_VERSION = '1.29.1';
+const APP_VERSION = '1.30.0';
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
@@ -1890,16 +1890,29 @@ function openCategory(key){
 }
 
 /* ---- itinerary ---- */
-function renderItineraryRow(p){
+function dayToDate(day){
+  if (!currentTrip.startDate) return null;
+  const d = new Date(currentTrip.startDate + 'T00:00:00');
+  d.setDate(d.getDate() + (day - 1));
+  return d;
+}
+function dayLabel(day){
+  const date = dayToDate(day);
+  const dateStr = date ? date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }) : '';
+  return `Day ${day}` + (dateStr ? ' · ' + dateStr : '');
+}
+function renderItineraryRow(p, nextPlace){
   const cat = CAT_BY_KEY[p.category];
   const div = document.createElement('div');
   div.className = 'place' + (p.visited ? ' visited' : '');
   const photo = p.photos && p.photos[0];
+  const metaParts = [cat ? cat.label : ''];
+  if (nextPlace) metaParts.push(`${formatDistance(distanceKm(p.lat, p.lng, nextPlace.lat, nextPlace.lng))} to next stop`);
   div.innerHTML = `
     ${photo ? `<img class="place-thumb" src="${photo}">` : `<span class="place-dot" style="background:var(--${p.category})">${CHECK_ICON}</span>`}
     <div class="place-main">
       <span class="place-name">${escapeHtml(p.name)}</span>
-      <div class="place-notes">${cat ? cat.label : ''}</div>
+      <div class="place-notes">${metaParts.filter(Boolean).join(' &middot; ')}</div>
     </div>
     ${p.visited ? '<span class="place-visited-tag">Been</span>' : ''}
     <span class="chev">&#8250;</span>`;
@@ -1920,7 +1933,7 @@ function shareItinerary(){
   if (!days.length){ alert('No itinerary days set yet — open a place and set a Day first.'); return; }
   let text = `${currentTrip.name} Itinerary\n\n`;
   days.forEach(day => {
-    text += `Day ${day}\n`;
+    text += `${dayLabel(day)}\n`;
     grouped[day].forEach(p => { text += `- ${p.name}${p.locality ? ' (' + p.locality + ')' : ''}\n`; });
     text += '\n';
   });
@@ -1952,11 +1965,15 @@ function renderItinerary(){
   days.forEach(day => {
     const label = document.createElement('div');
     label.className = 'section-label';
-    label.textContent = `Day ${day}`;
+    label.textContent = dayLabel(day);
     list.appendChild(label);
 
     const dayPlaces = grouped[day];
     const areaKeys = new Set(dayPlaces.map(p => p.locality || 'Other places'));
+    // Build the on-screen order first, area sub-headings included, so each
+    // row can be told what actually comes right after it - the next physical
+    // stop for the day, even when that's across an area heading.
+    const ordered = [];
     if (areaKeys.size > 1){
       const areas = {};
       dayPlaces.forEach(p => {
@@ -1965,15 +1982,25 @@ function renderItinerary(){
       });
       Object.keys(areas).sort((a, b) => a === 'Other places' ? 1 : b === 'Other places' ? -1 : a.localeCompare(b))
         .forEach(area => {
-          const areaLabel = document.createElement('div');
-          areaLabel.className = 'area-sublabel';
-          areaLabel.textContent = area;
-          list.appendChild(areaLabel);
-          areas[area].forEach(p => list.appendChild(renderItineraryRow(p)));
+          ordered.push({ areaLabel: area });
+          areas[area].forEach(p => ordered.push({ place: p }));
         });
     } else {
-      dayPlaces.forEach(p => list.appendChild(renderItineraryRow(p)));
+      dayPlaces.forEach(p => ordered.push({ place: p }));
     }
+    const flatPlaces = ordered.filter(o => o.place).map(o => o.place);
+    let flatIndex = 0;
+    ordered.forEach(entry => {
+      if (entry.areaLabel){
+        const areaLabel = document.createElement('div');
+        areaLabel.className = 'area-sublabel';
+        areaLabel.textContent = entry.areaLabel;
+        list.appendChild(areaLabel);
+      } else {
+        list.appendChild(renderItineraryRow(entry.place, flatPlaces[flatIndex + 1] || null));
+        flatIndex++;
+      }
+    });
   });
 }
 
