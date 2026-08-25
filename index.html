@@ -788,7 +788,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const APP_VERSION = '1.31.0';
+const APP_VERSION = '1.31.1';
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
@@ -839,6 +839,21 @@ let categoryOrder = CATEGORIES.map(c => c.key);
 const el = id => document.getElementById(id);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
 const escapeHtml = s => (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function safeLocalStorageSet(key, value){
+  // localStorage is only ever an offline-first cache here - Firebase is the
+  // real source of truth for a synced trip. Photos are stored as base64,
+  // which adds up fast, and once the origin's storage quota is full every
+  // setItem() throws QuotaExceededError - uncaught, that was aborting
+  // whatever save function called it partway through, before it ever
+  // reached the Firebase write or closed the editor, making saving a new
+  // place look like it silently did nothing. A full quota should degrade
+  // the local cache, never block the actual save.
+  try {
+    localStorage.setItem(key, value);
+  } catch (err) {
+    console.warn('localStorage.setItem failed (quota likely full), continuing without local cache:', err);
+  }
+}
 function cssVar(name, fallbackName){
   const root = getComputedStyle(document.documentElement);
   return root.getPropertyValue(name).trim() || root.getPropertyValue(fallbackName).trim();
@@ -904,7 +919,7 @@ function getUserName(){
   let name = (localStorage.getItem(USER_NAME_KEY) || '').trim();
   if (!name){
     name = ((prompt('What should we call you? (shown when you add places)') || '').trim()) || 'Someone';
-    localStorage.setItem(USER_NAME_KEY, name);
+    safeLocalStorageSet(USER_NAME_KEY, name);
   }
   return name;
 }
@@ -1059,7 +1074,7 @@ function loadVisibleCategories(file){
   return saved ? JSON.parse(saved) : DEFAULT_VISIBLE_CATEGORIES.slice();
 }
 function saveVisibleCategories(file, arr){
-  localStorage.setItem('tripmap:visible:' + file, JSON.stringify(arr));
+  safeLocalStorageSet('tripmap:visible:' + file, JSON.stringify(arr));
 }
 function loadCategoryOrder(file){
   const allKeys = CATEGORIES.map(c => c.key);
@@ -1072,14 +1087,14 @@ function loadCategoryOrder(file){
   return cleaned;
 }
 function saveCategoryOrder(file, arr){
-  localStorage.setItem('tripmap:order:' + file, JSON.stringify(arr));
+  safeLocalStorageSet('tripmap:order:' + file, JSON.stringify(arr));
 }
 function loadLocalDates(file){
   const saved = localStorage.getItem('tripmap:dates:' + file);
   return saved ? JSON.parse(saved) : { start: null, end: null };
 }
 function saveChecklist(){
-  localStorage.setItem('tripmap:checklist:' + currentTripFile, JSON.stringify(currentTrip.checklist));
+  safeLocalStorageSet('tripmap:checklist:' + currentTripFile, JSON.stringify(currentTrip.checklist));
   if (fbDb){
     fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(currentTripFile) + '/checklist').set(currentTrip.checklist);
   }
@@ -1130,14 +1145,14 @@ function renderChecklistViews(){
 }
 function saveDates(){
   const dates = { start: currentTrip.startDate || null, end: currentTrip.endDate || null };
-  localStorage.setItem('tripmap:dates:' + currentTripFile, JSON.stringify(dates));
+  safeLocalStorageSet('tripmap:dates:' + currentTripFile, JSON.stringify(dates));
   if (fbDb){
     fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(currentTripFile) + '/dates').set(dates);
   }
 }
 function saveTrip(){
   const clean = JSON.parse(JSON.stringify(currentTrip.places));
-  localStorage.setItem('tripmap:content:' + currentTripFile, JSON.stringify(clean));
+  safeLocalStorageSet('tripmap:content:' + currentTripFile, JSON.stringify(clean));
   if (fbDb){
     fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(currentTripFile) + '/places').set(clean);
   }
@@ -2246,7 +2261,7 @@ function nextUpcomingFlight(){
 }
 function saveFlights(){
   const clean = JSON.parse(JSON.stringify(currentTrip.flights));
-  localStorage.setItem('tripmap:flights:' + currentTripFile, JSON.stringify(clean));
+  safeLocalStorageSet('tripmap:flights:' + currentTripFile, JSON.stringify(clean));
   if (fbDb){
     fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(currentTripFile) + '/flights').set(clean);
   }
@@ -2499,7 +2514,7 @@ function setTrip(file, definition){
       const remote = snap.val();
       currentTrip.startDate = (remote && remote.start) || null;
       currentTrip.endDate = (remote && remote.end) || null;
-      localStorage.setItem('tripmap:dates:' + file, JSON.stringify({ start: currentTrip.startDate, end: currentTrip.endDate }));
+      safeLocalStorageSet('tripmap:dates:' + file, JSON.stringify({ start: currentTrip.startDate, end: currentTrip.endDate }));
       renderHome();
     });
   } else {
@@ -2515,7 +2530,7 @@ function setTrip(file, definition){
       if (file !== currentTripFile) return;
       const remote = snap.val();
       currentTrip.flights = Array.isArray(remote) ? remote : (remote && typeof remote === 'object') ? Object.values(remote) : [];
-      localStorage.setItem('tripmap:flights:' + file, JSON.stringify(currentTrip.flights));
+      safeLocalStorageSet('tripmap:flights:' + file, JSON.stringify(currentTrip.flights));
       renderHome();
       if (el('screen-flights').classList.contains('active')) renderFlightsScreen();
     });
@@ -2531,7 +2546,7 @@ function setTrip(file, definition){
       if (file !== currentTripFile) return;
       const remote = snap.val();
       currentTrip.checklist = Array.isArray(remote) ? remote : (remote && typeof remote === 'object') ? Object.values(remote) : [];
-      localStorage.setItem('tripmap:checklist:' + file, JSON.stringify(currentTrip.checklist));
+      safeLocalStorageSet('tripmap:checklist:' + file, JSON.stringify(currentTrip.checklist));
       renderChecklistViews();
     });
   } else {
@@ -2554,7 +2569,7 @@ function setTrip(file, definition){
         fbRef.set(currentTrip.places);
       }
       migratePlaces(currentTrip.places);
-      localStorage.setItem('tripmap:content:' + file, JSON.stringify(currentTrip.places));
+      safeLocalStorageSet('tripmap:content:' + file, JSON.stringify(currentTrip.places));
       renderMarkers();
       renderHome();
       if (activeCategory && el('screen-category').classList.contains('active')) openCategory(activeCategory);
@@ -2667,7 +2682,7 @@ async function boot(){
     const next = prompt('What should we call you? (shown when you add places)', current);
     if (next === null) return;
     const trimmed = next.trim();
-    if (trimmed) localStorage.setItem(USER_NAME_KEY, trimmed);
+    if (trimmed) safeLocalStorageSet(USER_NAME_KEY, trimmed);
     el('userNameStatus').textContent = localStorage.getItem(USER_NAME_KEY) || 'Not set';
     el('menu').classList.remove('open');
   });
@@ -2721,7 +2736,7 @@ async function boot(){
     const current = getRoom();
     const next = prompt('Sync room code (share this with whoever you want to sync with):', current);
     if (!next || next.trim() === current) return;
-    localStorage.setItem(ROOM_KEY, next.trim());
+    safeLocalStorageSet(ROOM_KEY, next.trim());
     el('roomStatus').textContent = fbDb ? getRoom() : 'offline';
     setTrip(currentTripFile, currentTrip);
     el('menu').classList.remove('open');
@@ -2788,9 +2803,9 @@ async function boot(){
     } catch (err) { /* fall back to default center/zoom */ }
 
     const definition = { name: trimmed, dates: '', center, zoom, bounds };
-    localStorage.setItem('tripmap:shell:' + file, JSON.stringify(definition));
+    safeLocalStorageSet('tripmap:shell:' + file, JSON.stringify(definition));
     const localTrips = JSON.parse(localStorage.getItem(LOCAL_TRIPS_KEY) || '[]');
-    if (!localTrips.includes(file)){ localTrips.push(file); localStorage.setItem(LOCAL_TRIPS_KEY, JSON.stringify(localTrips)); }
+    if (!localTrips.includes(file)){ localTrips.push(file); safeLocalStorageSet(LOCAL_TRIPS_KEY, JSON.stringify(localTrips)); }
     const allFiles = files.includes(file) ? files : [...files, file];
     populateTripSelect(allFiles, file);
     setTrip(file, definition);
