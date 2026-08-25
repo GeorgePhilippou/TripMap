@@ -825,7 +825,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const APP_VERSION = '1.33.0';
+const APP_VERSION = '1.33.1';
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
@@ -1538,8 +1538,16 @@ function parseLocationInput(raw){
     if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) return { lat, lng, name: '' };
   }
 
-  const urlMatch = text.match(/https?:\/\/\S+/);
-  const url = urlMatch ? urlMatch[0] : (/^https?:\/\//.test(text) ? text : null);
+  // If the whole trimmed input is already a URL, use it as-is rather than
+  // re-extracting it with a "no whitespace" regex - a share/URL param can
+  // legitimately contain a decoded literal space (Google Maps encodes a
+  // multi-word place name as "Some+Restaurant", which is already a plain
+  // space by the time this code sees it), and stopping at the first space
+  // would silently truncate the place name and everything after it,
+  // including the @lat,lng that makes the link useful at all. The \S+
+  // extraction is still needed for the "sentence with a link in it" case,
+  // where a URL is genuinely mixed in with other text.
+  const url = /^https?:\/\//.test(text) ? text : (text.match(/https?:\/\/\S+/) || [])[0] || null;
   if (url){
     let u;
     try { u = new URL(url); } catch (err) { return { query: text }; }
@@ -1763,15 +1771,27 @@ function confirmBulkImport(){
 }
 async function handleSharedLaunch(){
   const params = new URLSearchParams(location.search);
-  const shared = [params.get('text'), params.get('url'), params.get('title')].filter(Boolean).join(' ').trim();
-  if (!shared) return;
+  const sharedUrl = params.get('url');
+  const sharedText = params.get('text');
+  const sharedTitle = params.get('title');
+  if (!sharedUrl && !sharedText && !sharedTitle) return;
   history.replaceState({}, '', location.pathname);
-  const parsed = parseLocationInput(shared);
+  // The url field, when present, is already an isolated link - parse it
+  // directly rather than folding it into one combined string with text/
+  // title first. Joining them (and, before that, the URL-matching regex
+  // truncating at the first space) is what caused shared Maps links with a
+  // multi-word place name to lose everything after the first word.
+  let parsed = sharedUrl ? parseLocationInput(sharedUrl) : null;
+  if (!parsed || (parsed.lat == null && !parsed.unresolved && !parsed.query)){
+    const combined = [sharedText, sharedTitle].filter(Boolean).join(' ').trim();
+    if (combined) parsed = parseLocationInput(combined);
+  }
   if (parsed && (parsed.lat != null || parsed.unresolved)){
     showScreen('screen-map');
     await handleParsedLocation(parsed);
   } else {
-    const searchText = (parsed && parsed.query) || cleanSearchText(shared);
+    const searchText = cleanSearchText((parsed && parsed.query) || sharedText || sharedTitle || sharedUrl || '');
+    if (!searchText) return;
     showScreen('screen-map');
     el('search').value = searchText;
     runSearch(searchText);
