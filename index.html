@@ -423,6 +423,33 @@
     font-size:18px; cursor:pointer;
   }
 
+  /* ---- bulk import ---- */
+  .bulk-hint{ padding:0 18px 10px; font-size:13px; color:var(--muted); flex-shrink:0; }
+  .bulk-row{ display:flex; align-items:center; gap:10px; padding:10px 18px; }
+  .bulk-row + .bulk-row{ border-top:1px solid var(--border); }
+  .bulk-row-check{
+    width:20px; height:20px; border-radius:50%; border:1.5px solid var(--border); background:var(--surface);
+    flex-shrink:0; display:flex; align-items:center; justify-content:center; cursor:pointer; color:transparent;
+  }
+  .bulk-row-check svg{ width:11px; height:11px; }
+  .bulk-row.selected .bulk-row-check{ background:var(--accent); border-color:var(--accent); color:var(--surface); }
+  .bulk-row-main{ flex:1; min-width:0; }
+  .bulk-row-name{ font-size:14px; font-weight:500; }
+  .bulk-row-raw{ font-size:12px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .bulk-row.failed .bulk-row-name{ color:var(--danger-text); font-weight:400; }
+  .bulk-row.pending .bulk-row-name{ color:var(--muted); }
+  .bulk-row.failed{ cursor:default; }
+  .bulk-actions{
+    display:flex; gap:8px; padding:12px 18px; border-top:1px solid var(--border); flex-shrink:0;
+    padding-bottom:calc(12px + env(safe-area-inset-bottom));
+  }
+  .bulk-actions select{
+    flex:1; min-width:0; background:var(--surface2); color:var(--text); border:1px solid var(--border);
+    border-radius:8px; padding:10px; font-size:14px; font-family:inherit;
+  }
+  .bulk-actions .btn-primary{ flex-shrink:0; }
+  .bulk-actions .btn-primary:disabled{ opacity:.5; cursor:default; }
+
   /* ---- recap screen ---- */
   .recap-stat{ padding:18px; text-align:center; }
   .recap-stat .big{ font-family:'Fraunces',serif; font-size:44px; font-weight:500; color:var(--accent); line-height:1; }
@@ -559,6 +586,20 @@
       <h2>Trip recap</h2>
     </div>
     <div id="recapContent"></div>
+  </section>
+
+  <!-- BULK IMPORT -->
+  <section id="screen-bulk" class="screen">
+    <div class="cat-header">
+      <button class="icon-btn" id="bulkBackBtn">&#8592;</button>
+      <h2 style="flex:1;">Import places</h2>
+    </div>
+    <div class="bulk-hint" id="bulkHint"></div>
+    <div class="checklist" id="bulkList"></div>
+    <div class="bulk-actions">
+      <select id="bulkCategory"></select>
+      <button class="btn btn-primary" id="bulkConfirmBtn" disabled>Add places</button>
+    </div>
   </section>
 
   <!-- FULL MAP -->
@@ -747,7 +788,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const APP_VERSION = '1.30.1';
+const APP_VERSION = '1.31.0';
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
@@ -1447,14 +1488,49 @@ function parseLocationInput(raw){
 
     // Shortened link (e.g. maps.app.goo.gl, goo.gl/maps) or an unrecognized maps
     // URL with no name or coordinates anywhere in it - the real destination is
-    // server-side only; this single-file client-side app has no backend to
-    // follow the redirect and read the resolved coords.
+    // only known server-side, and this parser is synchronous. The caller
+    // (handleParsedLocation) takes the "unresolved" result and makes an async
+    // attempt to follow the redirect through a proxy before giving up.
     return { unresolved: true, url };
   }
 
   return { query: text };
 }
-function handleParsedLocation(parsed){
+async function fetchJson(url, timeoutMs){
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+async function resolveShortLink(url){
+  // Sharing a pin from the Google Maps or Apple Maps *app* almost always
+  // produces one of these shortened links rather than a full URL with
+  // coordinates in it - reading where it actually redirects to requires a
+  // server-side hop this static, backend-free app doesn't have on its own.
+  // Neither free service below is rock solid on its own (unshorten.me is
+  // fast and accurate but caps out at a small daily quota per caller;
+  // allorigins has no quota but is noticeably slower and occasionally times
+  // out or errors outright) - trying the quota-limited one first and only
+  // falling through to the slower one when needed gets the best odds out of
+  // either, without standing up real backend infrastructure for this. If
+  // both fail, the caller falls back to its original "can't read this"
+  // message, so this is a pure best-effort improvement, never a regression.
+  const viaUnshorten = await fetchJson('https://unshorten.me/json/' + encodeURIComponent(url), 6000);
+  if (viaUnshorten && viaUnshorten.success && viaUnshorten.resolved_url) return viaUnshorten.resolved_url;
+
+  const viaAllOrigins = await fetchJson('https://api.allorigins.win/get?url=' + encodeURIComponent(url), 9000);
+  if (viaAllOrigins && viaAllOrigins.status && viaAllOrigins.status.url && viaAllOrigins.status.url !== url) return viaAllOrigins.status.url;
+
+  return null;
+}
+async function handleParsedLocation(parsed){
   if (!parsed) return false;
   if (parsed.lat != null && parsed.lng != null){
     clearSearchResults();
@@ -1465,23 +1541,144 @@ function handleParsedLocation(parsed){
     return true;
   }
   if (parsed.unresolved){
+    const search = el('search');
+    const prevValue = search.value;
+    search.value = 'Resolving link…';
+    search.disabled = true;
+    const resolvedUrl = await resolveShortLink(parsed.url);
+    search.disabled = false;
+    const reparsed = resolvedUrl ? parseLocationInput(resolvedUrl) : null;
+    if (reparsed && reparsed.lat != null){
+      return handleParsedLocation(reparsed);
+    }
+    if (reparsed && reparsed.query){
+      search.value = reparsed.query;
+      await runSearch(reparsed.query);
+      if (!autoSelectIfSingle()){
+        clearTimeout(searchDebounceTimer);
+      }
+      return true;
+    }
+    search.value = prevValue;
     alert('That looks like a shortened Maps link, which can’t be read directly. Try sharing the full address or place name instead, or use "Copy Address" in Maps and paste that here.');
     return true;
   }
   return false;
 }
-function handleSharedLaunch(){
+
+/* ---- bulk import ---- */
+let bulkRows = [];
+async function geocodeBulkRow(row, query){
+  await new Promise(r => setTimeout(r, 1100)); // Nominatim's usage policy caps at 1 request/second
+  try {
+    const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(query);
+    const results = await (await fetch(url)).json();
+    if (results && results[0]){
+      row.lat = parseFloat(results[0].lat);
+      row.lng = parseFloat(results[0].lon);
+      row.name = results[0].display_name.split(',')[0];
+      row.status = 'resolved';
+    } else {
+      row.status = 'failed';
+    }
+  } catch (err) {
+    row.status = 'failed';
+  }
+}
+async function resolveBulkRow(row){
+  const parsed = parseLocationInput(row.raw);
+  if (parsed && parsed.lat != null){
+    row.lat = parsed.lat; row.lng = parsed.lng;
+    row.name = parsed.name || row.raw.slice(0, 60);
+    row.status = 'resolved';
+    return;
+  }
+  if (parsed && parsed.unresolved){
+    const resolvedUrl = await resolveShortLink(parsed.url);
+    const reparsed = resolvedUrl ? parseLocationInput(resolvedUrl) : null;
+    if (reparsed && reparsed.lat != null){
+      row.lat = reparsed.lat; row.lng = reparsed.lng;
+      row.name = reparsed.name || row.raw.slice(0, 60);
+      row.status = 'resolved';
+      return;
+    }
+    if (reparsed && reparsed.query){
+      await geocodeBulkRow(row, reparsed.query);
+      return;
+    }
+    row.status = 'failed';
+    return;
+  }
+  await geocodeBulkRow(row, (parsed && parsed.query) || row.raw);
+}
+function renderBulkList(){
+  el('bulkHint').textContent = bulkRows.some(r => r.status === 'pending')
+    ? `Matching ${bulkRows.length} line${bulkRows.length === 1 ? '' : 's'} to places…`
+    : `Found ${bulkRows.filter(r => r.status === 'resolved').length} of ${bulkRows.length} places.`;
+  const list = el('bulkList');
+  list.innerHTML = bulkRows.map((row, i) => {
+    const selected = row.status === 'resolved' && row.selected;
+    const statusText = row.status === 'pending' ? 'Looking…' : row.status === 'failed' ? "Couldn't find this one" : row.name;
+    return `<div class="bulk-row ${row.status}${selected ? ' selected' : ''}" data-i="${i}">
+      ${row.status === 'resolved' ? `<div class="bulk-row-check">${CHECK_ICON}</div>` : '<div style="width:20px;flex-shrink:0;"></div>'}
+      <div class="bulk-row-main">
+        <div class="bulk-row-name">${escapeHtml(statusText)}</div>
+        <div class="bulk-row-raw">${escapeHtml(row.raw)}</div>
+      </div>
+    </div>`;
+  }).join('');
+  list.querySelectorAll('.bulk-row.resolved').forEach(rowEl => {
+    rowEl.addEventListener('click', () => {
+      const row = bulkRows[parseInt(rowEl.dataset.i, 10)];
+      row.selected = !row.selected;
+      renderBulkList();
+      updateBulkConfirmState();
+    });
+  });
+  updateBulkConfirmState();
+}
+function updateBulkConfirmState(){
+  const count = bulkRows.filter(r => r.status === 'resolved' && r.selected).length;
+  const btn = el('bulkConfirmBtn');
+  btn.disabled = count === 0;
+  btn.textContent = count ? `Add ${count} place${count === 1 ? '' : 's'}` : 'Add places';
+}
+async function openBulkImport(lines){
+  bulkRows = lines.map(raw => ({ raw, status: 'pending', name: '', lat: null, lng: null, selected: true }));
+  el('bulkCategory').innerHTML = CATEGORIES.map(c => `<option value="${c.key}">${c.label}</option>`).join('');
+  el('bulkCategory').value = activeCategory || CATEGORIES[0].key;
+  renderBulkList();
+  showScreen('screen-bulk');
+  for (const row of bulkRows){
+    await resolveBulkRow(row);
+    renderBulkList();
+  }
+}
+function confirmBulkImport(){
+  const category = el('bulkCategory').value;
+  const toAdd = bulkRows.filter(r => r.status === 'resolved' && r.selected);
+  if (!toAdd.length) return;
+  toAdd.forEach(row => {
+    currentTrip.places.push({
+      id: uid(), lat: row.lat, lng: row.lng, addedBy: getUserName(), addedAt: Date.now(),
+      name: row.name, category, visited: false, day: null, notes: '', photos: []
+    });
+  });
+  saveTrip();
+  renderMarkers();
+  renderHome();
+  bulkRows = [];
+  showScreen('screen-home');
+}
+async function handleSharedLaunch(){
   const params = new URLSearchParams(location.search);
   const shared = [params.get('text'), params.get('url'), params.get('title')].filter(Boolean).join(' ').trim();
   if (!shared) return;
   history.replaceState({}, '', location.pathname);
   const parsed = parseLocationInput(shared);
-  if (parsed && parsed.lat != null){
+  if (parsed && (parsed.lat != null || parsed.unresolved)){
     showScreen('screen-map');
-    handleParsedLocation(parsed);
-  } else if (parsed && parsed.unresolved){
-    showScreen('screen-map');
-    alert('You shared a Maps link, but it’s a shortened link Trip Map can’t read directly. Share the address or place name instead, or paste it into the search bar.');
+    await handleParsedLocation(parsed);
   } else {
     const searchText = (parsed && parsed.query) || cleanSearchText(shared);
     showScreen('screen-map');
@@ -2509,6 +2706,9 @@ async function boot(){
   });
   el('recapBackBtn').addEventListener('click', () => showScreen('screen-home'));
 
+  el('bulkBackBtn').addEventListener('click', () => { bulkRows = []; showScreen('screen-home'); });
+  el('bulkConfirmBtn').addEventListener('click', confirmBulkImport);
+
   el('itineraryShareBtn').addEventListener('click', shareItinerary);
 
   el('weatherCloseBtn').addEventListener('click', () => el('weatherSheet').classList.remove('open'));
@@ -2669,17 +2869,28 @@ async function boot(){
     // event instead, while it's still intact, and insert the cleaned
     // version ourselves.
     const raw = (e.clipboardData || window.clipboardData) ? (e.clipboardData || window.clipboardData).getData('text/plain') : '';
+    // Two or more non-empty lines means this is a list of places (links or
+    // addresses, one per line) rather than a single one - hand it to the
+    // bulk importer instead of collapsing it into one garbled search query.
+    const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    if (lines.length > 1){
+      e.preventDefault();
+      el('search').value = '';
+      clearSearchResults();
+      openBulkImport(lines);
+      return;
+    }
     const cleaned = cleanSearchText(raw || el('search').value);
     if (raw){
       e.preventDefault();
       el('search').value = cleaned;
     }
-    setTimeout(() => {
+    setTimeout(async () => {
       el('search').value = cleaned;
       const parsed = parseLocationInput(cleaned);
       if (parsed && (parsed.lat != null || parsed.unresolved)){
         clearTimeout(searchDebounceTimer);
-        handleParsedLocation(parsed);
+        await handleParsedLocation(parsed);
       } else {
         // A Maps link with no coordinates in it can still resolve to a usable
         // place name/address (parsed.query) - search that instead of the raw
@@ -2700,7 +2911,7 @@ async function boot(){
     const raw = cleanSearchText(e.target.value);
     if (!raw) return;
     const parsed = parseLocationInput(raw);
-    if (handleParsedLocation(parsed)) return;
+    if (await handleParsedLocation(parsed)) return;
     const q = (parsed && parsed.query) || raw;
     el('search').value = q;
     if (lastSearchQuery === q){
