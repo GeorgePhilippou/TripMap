@@ -271,13 +271,24 @@
   #editor-box h3, #flightEditor-box h3{ font-family:'Fraunces',serif; font-weight:500; margin:0 0 2px; font-size:19px; }
   #editor-box label, #flightEditor-box label{ font-size:11px; color:var(--accent); text-transform:uppercase; letter-spacing:.04em; }
   #editor-box input, #editor-box select, #editor-box textarea, #flightEditor-box input{
-    width:100%; background:var(--surface2); color:var(--text); border:1px solid var(--border);
+    width:100%; max-width:100%; background:var(--surface2); color:var(--text); border:1px solid var(--border);
     border-radius:8px; padding:10px; font-size:14px; font-family:inherit; margin-top:4px;
   }
   #editor-box textarea{ min-height:64px; resize:vertical; }
+  /* iOS/iPadOS renders type=date/time with their own native chrome layered
+     over whatever box we give them, which can visually spill past our
+     border/background instead of respecting it - appearance:none forces
+     Safari to just draw our styling instead of blending in its own. */
+  #flightEditor-box input[type="date"], #flightEditor-box input[type="time"]{
+    -webkit-appearance:none; appearance:none;
+  }
   .flight-hint{ font-size:12px; color:var(--text); background:var(--accent-soft); border-radius:8px; padding:9px 11px; margin-top:2px; }
   .editor-row{ display:flex; gap:10px; }
-  .editor-row > div{ flex:1; }
+  /* min-width defaults to auto on a flex child, so a native date/time input
+     (which refuses to shrink below its own rendered content width on iOS)
+     was pushing its column wider than the row and spilling past the modal's
+     edge instead of respecting flex:1 - min-width:0 lets it actually shrink. */
+  .editor-row > div{ flex:1; min-width:0; }
   .editor-actions{ display:flex; justify-content:space-between; margin-top:4px; gap:8px; }
   button{ font-family:inherit; }
   .btn{ background:var(--surface2); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:10px 14px; font-size:13px; cursor:pointer; }
@@ -736,7 +747,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const APP_VERSION = '1.30.0';
+const APP_VERSION = '1.30.1';
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
