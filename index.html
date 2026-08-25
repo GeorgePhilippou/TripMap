@@ -35,7 +35,6 @@
     --hike:#65588F;       --hike-soft:#E1DCF0;
     --overlay:rgba(250,248,239,.85);
     --danger-bg:#F5DEDB; --danger-border:#E0B7B1; --danger-text:#9A3E33;
-    --desk-bg:#E7E4D2;
   }
   *{box-sizing:border-box;}
   html,body{height:100%;margin:0;overscroll-behavior:none;}
@@ -49,7 +48,7 @@
     border-left:1px solid var(--border); border-right:1px solid var(--border); overflow:hidden; }
 
   @media (min-width:760px){
-    body{ align-items:center; background:var(--desk-bg); }
+    body{ align-items:center; background:var(--surface2); }
     #app{
       max-width:640px; height:calc(100dvh - 64px); margin:32px 0;
       border:1px solid var(--border); border-radius:20px;
@@ -76,7 +75,7 @@
   /* ---- top bar (shared) ---- */
   .topbar{ display:flex; align-items:center; justify-content:flex-end; padding:calc(10px + env(safe-area-inset-top)) 18px 0; flex-shrink:0; }
   .icon-btn{
-    background:var(--accent-soft); border:1px solid var(--accent-soft); color:var(--accent); border-radius:10px;
+    background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:10px;
     width:34px; height:34px; font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center;
   }
   .icon-btn:hover{ border-color:var(--accent); }
@@ -128,7 +127,7 @@
   .cat-icon{ width:26px; height:26px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:15px; flex-shrink:0; }
   .card-title{ font-size:14px; font-weight:600; line-height:1.15; }
   .card-count{ font-size:12px; color:var(--muted); line-height:1.15; }
-  .chev{ color:var(--accent); opacity:.55; font-size:18px; }
+  .chev{ color:var(--muted); font-size:18px; }
   .pill-skeleton{
     background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:4px 8px;
     width:84px; height:19px; animation:pill-pulse 1.3s ease-in-out infinite;
@@ -158,6 +157,7 @@
     border-radius:10px; padding:9px 12px; font-size:13px; font-family:inherit;
   }
   .area-sublabel{ font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; padding:10px 18px 4px; font-weight:600; }
+  #catSortBtn{ color:var(--accent); }
   #catSortBtn.active{ background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
   .place-list{ margin-top:8px; }
   .place{ padding:14px 18px; border-bottom:1px solid var(--border); cursor:pointer; display:flex; align-items:center; gap:12px; }
