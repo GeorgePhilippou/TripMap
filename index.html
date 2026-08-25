@@ -736,7 +736,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const APP_VERSION = '1.29.0';
+const APP_VERSION = '1.29.1';
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
@@ -1596,6 +1596,24 @@ function renderMapLegend(){
     });
   }
 }
+function goToPlaceOnMap(p){
+  // A category list is usually opened with the map's own filter left over
+  // from a previous visit - if that filter would hide this place's marker,
+  // clear it first so the marker (and its popup) is actually there to jump to.
+  if (mapCategoryFilter && mapCategoryFilter !== p.category){
+    mapCategoryFilter = null;
+    renderMapLegend();
+    renderMarkers();
+  }
+  showScreen('screen-map');
+  const marker = markers[p.id];
+  if (!marker) return;
+  // Places close together render as one cluster badge rather than individual
+  // pins - zoomToShowLayer is markercluster's own way to zoom/pan just far
+  // enough to split the cluster and reveal this specific marker, then hand
+  // back control once it's actually on screen and poppable.
+  markerClusterGroup.zoomToShowLayer(marker, () => marker.openPopup());
+}
 function renderMarkers(){
   markerClusterGroup.clearLayers();
   markers = {};
@@ -1817,7 +1835,7 @@ function renderPlaceRow(p){
       toggleVisitedInline(p, div, () => { if (activeCategory) openCategory(activeCategory); });
     });
   }
-  div.addEventListener('click', () => openEditor(p.id));
+  div.addEventListener('click', () => goToPlaceOnMap(p));
   return div;
 }
 let categoryFilter = '';
