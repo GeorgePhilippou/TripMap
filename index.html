@@ -393,6 +393,22 @@
   .forecast-temps{ flex:1; text-align:right; font-size:13px; color:var(--muted); }
   .forecast-temps b{ color:var(--text); }
 
+  /* ---- category cover photo picker ---- */
+  #coverPhotoSheet{ position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; align-items:flex-end; justify-content:center; z-index:1000; }
+  #coverPhotoSheet.open{ display:flex; }
+  #coverPhotoSheet-box{
+    background:var(--surface); border:1px solid var(--border); border-bottom:none;
+    border-radius:18px 18px 0 0; padding:20px 18px calc(20px + env(safe-area-inset-bottom));
+    width:100%; max-width:480px; display:flex; flex-direction:column; gap:12px; max-height:80vh;
+  }
+  #coverPhotoSheet-box h3{ font-family:'Fraunces',serif; font-weight:500; margin:0; font-size:19px; }
+  .cover-photo-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; overflow-y:auto; }
+  .cover-photo-thumb{
+    aspect-ratio:1; border-radius:10px; background-size:cover; background-position:center; cursor:pointer;
+    border:2px solid transparent;
+  }
+  .cover-photo-thumb.active{ border-color:var(--accent); }
+
   /* ---- trip notes checklist (shared by the full notes screen and the
      iPad side panel widget) ---- */
   .checklist{ flex:1; min-height:0; overflow-y:auto; }
@@ -530,6 +546,9 @@
   <section id="screen-category" class="screen">
     <div class="cat-banner" id="catBanner">
       <button class="icon-btn" id="catBackBtn">&#8592;</button>
+      <button class="icon-btn" id="catCoverBtn" title="Change cover photo" style="margin-left:auto; display:none;">
+        <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="15" height="12" rx="2"/><circle cx="7.5" cy="9" r="1.5"/><path d="M17.5 13.5l-4-3.5-3 2.5-2-1.5-6 4.5"/></svg>
+      </button>
       <div class="cat-banner-icon" id="catBannerIcon"></div>
     </div>
     <div class="cat-title-row">
@@ -757,6 +776,18 @@
   </div>
 </div>
 
+<!-- CATEGORY COVER PHOTO PICKER -->
+<div id="coverPhotoSheet">
+  <div id="coverPhotoSheet-box">
+    <h3>Choose cover photo</h3>
+    <div id="coverPhotoGrid" class="cover-photo-grid"></div>
+    <div class="editor-row">
+      <button class="btn" id="coverPhotoResetBtn">Use automatically</button>
+      <button class="btn" id="coverPhotoCloseBtn">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- TRIP MENU -->
 <div id="menu">
   <div id="menu-box">
@@ -788,7 +819,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const APP_VERSION = '1.31.1';
+const APP_VERSION = '1.32.0';
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
@@ -802,7 +833,7 @@ const FIREBASE_CONFIG = {
 const DEFAULT_ROOM = 'philippou-megan-8x4q';
 const ROOM_KEY = 'tripmap:room';
 const LOCAL_TRIPS_KEY = 'tripmap:localtrips';
-let fbApp, fbDb, fbRef, fbDatesRef, fbFlightsRef, fbChecklistRef;
+let fbApp, fbDb, fbRef, fbDatesRef, fbFlightsRef, fbChecklistRef, fbCategoryCoversRef;
 try {
   fbApp = firebase.initializeApp(FIREBASE_CONFIG);
   fbDb = firebase.database();
@@ -1321,9 +1352,22 @@ function updateHeroMap(){
     const color = categoryColor(p.category);
     L.circleMarker([p.lat, p.lng], { radius: 5, color: cssVar('--surface', '--surface'), weight: 1.5, fillColor: color, fillOpacity: 1 }).addTo(heroMarkersLayer);
   });
+  const places = currentTrip.places;
   const applyView = () => {
-    if (currentTrip.bounds) heroMap.fitBounds(currentTrip.bounds, { animate: false, maxZoom: 15, padding: [4, 4] });
-    else heroMap.setView(currentTrip.center || [20, 0], Math.max((currentTrip.zoom || 4) - 2, 2), { animate: false });
+    if (places.length === 1){
+      heroMap.setView([places[0].lat, places[0].lng], 14, { animate: false });
+    } else if (places.length > 1){
+      // Fit to where the places actually are, not the trip's whole search
+      // area - falling back to the trip's own center/zoom (further zoomed
+      // out to make room for the "next up" pill) was showing the entire
+      // country, and past it, whenever no tight bounds were set on the trip
+      // itself - which is every trip, since none of them define one.
+      heroMap.fitBounds(L.latLngBounds(places.map(p => [p.lat, p.lng])), { animate: false, maxZoom: 15, padding: [8, 8] });
+    } else if (currentTrip.bounds){
+      heroMap.fitBounds(currentTrip.bounds, { animate: false, maxZoom: 12, padding: [4, 4] });
+    } else {
+      heroMap.setView(currentTrip.center || [20, 0], Math.max((currentTrip.zoom || 4) - 2, 2), { animate: false });
+    }
   };
   applyView();
   // invalidateSize() pans to compensate for a container size change, based on
@@ -1946,13 +1990,12 @@ function renderHome(){
   }
   grid.style.gridTemplateRows = `repeat(${Math.ceil(visibleCats.length / 2)}, minmax(0,1fr))`;
   visibleCats.forEach(c => {
-    const catPlaces = currentTrip.places.filter(p => p.category === c.key);
-    const count = catPlaces.length;
-    const photoPlace = catPlaces.find(p => p.photos && p.photos[0]);
+    const count = currentTrip.places.filter(p => p.category === c.key).length;
+    const cover = getCategoryCoverPhoto(c.key);
     const card = document.createElement('div');
-    card.className = 'card' + (photoPlace ? ' has-photo' : '');
-    if (photoPlace){
-      card.style.backgroundImage = `linear-gradient(165deg, rgba(0,0,0,.1), rgba(0,0,0,.6)), url(${photoPlace.photos[0]})`;
+    card.className = 'card' + (cover ? ' has-photo' : '');
+    if (cover){
+      card.style.backgroundImage = `linear-gradient(165deg, rgba(0,0,0,.1), rgba(0,0,0,.6)), url(${cover})`;
       card.innerHTML = `
         <div class="card-title" style="color:#fff;">${c.label}</div>
         <div class="card-count" style="color:rgba(255,255,255,.85);">${count} place${count===1?'':'s'}</div>`;
@@ -2013,17 +2056,77 @@ function toggleCategoryVisible(key){
 }
 
 /* ---- category list ---- */
+function categoryPhotoPool(key){
+  // Every photo on every place in this category, in a stable order - the
+  // pool the cover picker shows, and what "automatic" falls back to (the
+  // first one) when there's no chosen override, or the override no longer
+  // points at a real place/photo (deleted since it was picked).
+  const pool = [];
+  currentTrip.places.filter(p => p.category === key).forEach(p => {
+    (p.photos || []).forEach((photo, i) => pool.push({ placeId: p.id, index: i, photo }));
+  });
+  return pool;
+}
+function getCategoryCoverPhoto(key){
+  const override = currentTrip.categoryCovers && currentTrip.categoryCovers[key];
+  if (override){
+    const p = currentTrip.places.find(pl => pl.id === override.placeId);
+    if (p && p.photos && p.photos[override.index] != null) return p.photos[override.index];
+  }
+  const pool = categoryPhotoPool(key);
+  return pool.length ? pool[0].photo : null;
+}
+function saveCategoryCovers(){
+  safeLocalStorageSet('tripmap:covers:' + currentTripFile, JSON.stringify(currentTrip.categoryCovers || {}));
+  if (fbDb){
+    fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(currentTripFile) + '/categoryCovers').set(currentTrip.categoryCovers || {});
+  }
+}
+function setCategoryCover(key, placeId, index){
+  currentTrip.categoryCovers = currentTrip.categoryCovers || {};
+  currentTrip.categoryCovers[key] = { placeId, index };
+  saveCategoryCovers();
+  renderHome();
+  renderCatBanner(key);
+}
+function clearCategoryCover(key){
+  if (currentTrip.categoryCovers) delete currentTrip.categoryCovers[key];
+  saveCategoryCovers();
+  renderHome();
+  renderCatBanner(key);
+}
+function openCoverPhotoPicker(key){
+  const pool = categoryPhotoPool(key);
+  if (!pool.length) return;
+  const override = currentTrip.categoryCovers && currentTrip.categoryCovers[key];
+  el('coverPhotoGrid').innerHTML = pool.map(item => {
+    const active = override && override.placeId === item.placeId && override.index === item.index;
+    return `<div class="cover-photo-thumb${active ? ' active' : ''}" data-place="${item.placeId}" data-index="${item.index}" style="background-image:url(${item.photo})"></div>`;
+  }).join('');
+  el('coverPhotoGrid').querySelectorAll('.cover-photo-thumb').forEach(thumb => {
+    thumb.addEventListener('click', () => {
+      setCategoryCover(key, thumb.dataset.place, parseInt(thumb.dataset.index, 10));
+      el('coverPhotoSheet').classList.remove('open');
+    });
+  });
+  el('coverPhotoResetBtn').onclick = () => {
+    clearCategoryCover(key);
+    el('coverPhotoSheet').classList.remove('open');
+  };
+  el('coverPhotoSheet').classList.add('open');
+}
 function renderCatBanner(key){
   const cat = CAT_BY_KEY[key];
   const banner = el('catBanner');
-  const withPhoto = currentTrip.places.find(p => p.category === key && p.photos && p.photos[0]);
-  if (withPhoto){
-    banner.style.backgroundImage = `linear-gradient(180deg, rgba(0,0,0,.05), rgba(0,0,0,.4)), url(${withPhoto.photos[0]})`;
+  const cover = getCategoryCoverPhoto(key);
+  if (cover){
+    banner.style.backgroundImage = `linear-gradient(180deg, rgba(0,0,0,.05), rgba(0,0,0,.4)), url(${cover})`;
     el('catBannerIcon').innerHTML = '';
   } else {
     banner.style.backgroundImage = `linear-gradient(135deg, var(--${key}), var(--${key}-soft))`;
     el('catBannerIcon').innerHTML = cat.icon;
   }
+  el('catCoverBtn').style.display = categoryPhotoPool(key).length ? 'flex' : 'none';
 }
 const CHECK_ICON = '<svg class="check-icon" viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3 3 7-7"/></svg>';
 function toggleVisitedInline(p, div, refreshFn){
@@ -2478,6 +2581,7 @@ function setTrip(file, definition){
   if (fbDatesRef) { fbDatesRef.off(); fbDatesRef = null; }
   if (fbFlightsRef) { fbFlightsRef.off(); fbFlightsRef = null; }
   if (fbChecklistRef) { fbChecklistRef.off(); fbChecklistRef = null; }
+  if (fbCategoryCoversRef) { fbCategoryCoversRef.off(); fbCategoryCoversRef = null; }
   clearSearchResults();
   el('search').value = '';
   mapCategoryFilter = null;
@@ -2494,6 +2598,7 @@ function setTrip(file, definition){
     endDate: null,
     flights: [],
     checklist: [],
+    categoryCovers: {},
     visibleCategories: loadVisibleCategories(file)
   };
   categoryOrder = loadCategoryOrder(file);
@@ -2553,6 +2658,21 @@ function setTrip(file, definition){
     const saved = localStorage.getItem('tripmap:checklist:' + file);
     currentTrip.checklist = saved ? JSON.parse(saved) : [];
     renderChecklistViews();
+  }
+
+  if (fbDb){
+    fbCategoryCoversRef = fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(file) + '/categoryCovers');
+    fbCategoryCoversRef.on('value', snap => {
+      if (file !== currentTripFile) return;
+      const remote = snap.val();
+      currentTrip.categoryCovers = (remote && typeof remote === 'object') ? remote : {};
+      safeLocalStorageSet('tripmap:covers:' + file, JSON.stringify(currentTrip.categoryCovers));
+      renderHome();
+      if (activeCategory && el('screen-category').classList.contains('active')) renderCatBanner(activeCategory);
+    });
+  } else {
+    const savedCovers = localStorage.getItem('tripmap:covers:' + file);
+    currentTrip.categoryCovers = savedCovers ? JSON.parse(savedCovers) : {};
   }
 
   if (fbDb){
@@ -2729,6 +2849,12 @@ async function boot(){
   el('weatherCloseBtn').addEventListener('click', () => el('weatherSheet').classList.remove('open'));
   el('weatherSheet').addEventListener('click', e => {
     if (e.target === el('weatherSheet')) el('weatherSheet').classList.remove('open');
+  });
+
+  el('catCoverBtn').addEventListener('click', () => { if (activeCategory) openCoverPhotoPicker(activeCategory); });
+  el('coverPhotoCloseBtn').addEventListener('click', () => el('coverPhotoSheet').classList.remove('open'));
+  el('coverPhotoSheet').addEventListener('click', e => {
+    if (e.target === el('coverPhotoSheet')) el('coverPhotoSheet').classList.remove('open');
   });
 
   el('roomStatus').textContent = fbDb ? getRoom() : 'offline';
