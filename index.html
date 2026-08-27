@@ -3149,7 +3149,12 @@ async function boot(){
     // already gone. Read the raw clipboard text directly from the paste
     // event instead, while it's still intact, and insert the cleaned
     // version ourselves.
-    const raw = (e.clipboardData || window.clipboardData) ? (e.clipboardData || window.clipboardData).getData('text/plain') : '';
+    // "Copy" on a place card in Maps puts a URL-typed pasteboard item on the
+    // clipboard rather than plain text - text/plain comes back empty for
+    // that, silently breaking paste entirely, so text/uri-list (the flavor
+    // browsers expose URL-type clipboard items under) is tried as well.
+    const cd = e.clipboardData || window.clipboardData;
+    const raw = cd ? (cd.getData('text/plain') || cd.getData('text/uri-list') || '') : '';
     // Two or more non-empty lines means this is a list of places (links or
     // addresses, one per line) rather than a single one - hand it to the
     // bulk importer instead of collapsing it into one garbled search query.
