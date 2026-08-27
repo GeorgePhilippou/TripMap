@@ -75,7 +75,7 @@ To deploy it:
 1. Create a module Worker in Cloudflare Workers.
 2. Deploy the contents of `worker/resolve-maps-link.js`.
 3. Test allowed Google and Apple short links and confirm unrelated URLs return HTTP 403.
-4. Set `RESOLVE_WORKER_URL` in `index.html` to the deployed HTTPS Worker URL.
+4. Set `RESOLVE_WORKER_URL` in `index.html` to the deployed HTTPS Worker URL. The current production resolver is `https://tripmap-link-resolver.george-philippou.workers.dev/`.
 5. Keep the existing client-side fallbacks until the Worker has been observed in production.
 
 TripMap tries the configured Worker first. When a mobile share includes a place name or address as well as its short URL, that text is retained as a geocoding fallback. A copied short URL contains no such metadata, so reliable resolution of copied links still requires the deployed Worker.
