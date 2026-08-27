@@ -2,9 +2,11 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   boundsSpanReasonable,
+  buildResolverRequestUrl,
   buildRoomInviteUrl,
   cleanSearchText,
   computeCountdownText,
+  extractSharedSearchText,
   generatePrivateRoomCode,
   isValidRoomCode,
   migratePlaces,
@@ -99,4 +101,27 @@ test('converts legacy place arrays to ID-keyed records and back', () => {
 test('refuses unsafe or duplicate place IDs before a collection write', () => {
   assert.throws(() => placesToRecord([{ id: 'bad/id' }]), /Firebase-safe/);
   assert.throws(() => placesToRecord([{ id: 'same' }, { id: 'same' }]), /Duplicate place ID/);
+});
+
+test('builds a safe Worker request without losing an existing endpoint query', () => {
+  const target = 'https://maps.app.goo.gl/abc123';
+  assert.equal(
+    buildResolverRequestUrl('https://tripmap-resolver.example.workers.dev/?source=tripmap', target),
+    'https://tripmap-resolver.example.workers.dev/?source=tripmap&url=https%3A%2F%2Fmaps.app.goo.gl%2Fabc123',
+  );
+  assert.equal(buildResolverRequestUrl('', target), null);
+  assert.equal(buildResolverRequestUrl('http://insecure.example/', target), null);
+  assert.equal(buildResolverRequestUrl('https://resolver.example/', 'not a URL'), null);
+});
+
+test('extracts a geocodable fallback from mobile Maps share metadata', () => {
+  assert.equal(
+    extractSharedSearchText('Tombs of the Kings\nPaphos, Cyprus\nhttps://maps.app.goo.gl/abc', 'Google Maps'),
+    'Tombs of the Kings, Paphos, Cyprus',
+  );
+  assert.equal(
+    extractSharedSearchText('View on Apple Maps: https://maps.apple/p/abc', 'Kolossi Castle'),
+    'Kolossi Castle',
+  );
+  assert.equal(extractSharedSearchText('https://maps.app.goo.gl/abc', 'Google Maps'), '');
 });

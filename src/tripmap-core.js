@@ -32,6 +32,35 @@
     return isValidRoomCode(value) ? value : null;
   }
 
+  function buildResolverRequestUrl(endpoint, targetUrl) {
+    if (!endpoint) return null;
+    let resolver;
+    let target;
+    try {
+      resolver = new URL(endpoint);
+      target = new URL(targetUrl);
+    } catch (error) {
+      return null;
+    }
+    if (resolver.protocol !== 'https:' || target.protocol !== 'https:') return null;
+    resolver.searchParams.set('url', target.toString());
+    return resolver.toString();
+  }
+
+  function extractSharedSearchText(sharedText, sharedTitle) {
+    const cleanPart = value => cleanSearchText((value || '')
+      .replace(/https?:\/\/\S+/gi, ' ')
+      .replace(/\b(?:shared from|view on|open in)?\s*(?:Google|Apple) Maps\b/gi, ' '))
+      .replace(/^[\s,:;–—-]+|[\s,:;–—-]+$/g, '')
+      .replace(/^maps$/i, '')
+      .trim();
+    const text = cleanPart(sharedText);
+    const title = cleanPart(sharedTitle);
+    if (!text) return title;
+    if (!title || text.toLowerCase().includes(title.toLowerCase())) return text;
+    return `${text}, ${title}`;
+  }
+
   function placesFromRemote(remote) {
     if (Array.isArray(remote)) return remote.filter(place => place && typeof place === 'object');
     if (remote && typeof remote === 'object') {
@@ -179,9 +208,11 @@
 
   return {
     boundsSpanReasonable,
+    buildResolverRequestUrl,
     buildRoomInviteUrl,
     cleanSearchText,
     computeCountdownText,
+    extractSharedSearchText,
     generatePrivateRoomCode,
     isValidRoomCode,
     LOCALITY_FORMAT_VERSION,

@@ -1,6 +1,6 @@
 // Bump this on every deploy so activate() purges the old cache - otherwise
 // iOS home-screen installs can keep serving a stale shell indefinitely.
-const CACHE_NAME = 'tripmap-v3';
+const CACHE_NAME = 'tripmap-v4';
 const SHELL_URLS = ['./', './index.html', './manifest.json', './src/tripmap-core.js'];
 
 self.addEventListener('install', event => {
