@@ -52,3 +52,23 @@ test('follows an allowed link and returns its final URL', async () => {
     global.fetch = originalFetch;
   }
 });
+
+test('supports the supplied Apple Maps short-link redirect shape', async () => {
+  const originalFetch = global.fetch;
+  const shortUrl = 'https://maps.apple/p/mTearjMg1xfYIn';
+  const finalUrl = "https://maps.apple.com/place?address=Dimokratias%20Avenue%2032,%208028%20Paphos,%20Cyprus&coordinate=34.776722,32.443865&name=McDonald's&place-id=I39053CB4E3DAB236&map=h";
+  let fetchedUrl;
+  global.fetch = async url => {
+    fetchedUrl = url;
+    return { url: finalUrl };
+  };
+  try {
+    const request = new Request('https://worker.example/?url=' + encodeURIComponent(shortUrl));
+    const response = await worker.default.fetch(request);
+    assert.equal(response.status, 200);
+    assert.equal(fetchedUrl, shortUrl);
+    assert.deepEqual(await response.json(), { resolvedUrl: finalUrl });
+  } finally {
+    global.fetch = originalFetch;
+  }
+});

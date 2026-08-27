@@ -194,6 +194,18 @@
           const [lat, lng] = query.split(',').map(parseFloat);
           return { lat, lng, name };
         }
+        // Google place URLs can carry a map viewport after "@" as well as the
+        // actual place coordinates in their data block. The viewport is not a
+        // reliable location (shared links sometimes contain @0,0), so prefer
+        // the data-block coordinates when present.
+        const placeCoordinates = parsedUrl.href.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/);
+        if (placeCoordinates) {
+          return { lat: parseFloat(placeCoordinates[1]), lng: parseFloat(placeCoordinates[2]), name };
+        }
+        const alternatePlaceCoordinates = parsedUrl.href.match(/!2d(-?\d+(?:\.\d+)?)!3d(-?\d+(?:\.\d+)?)/);
+        if (alternatePlaceCoordinates) {
+          return { lat: parseFloat(alternatePlaceCoordinates[2]), lng: parseFloat(alternatePlaceCoordinates[1]), name };
+        }
         const atMatch = parsedUrl.href.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
         if (atMatch) return { lat: parseFloat(atMatch[1]), lng: parseFloat(atMatch[2]), name };
         const fallback = name || (query ? decodeURIComponent(query.replace(/\+/g, ' ')) : '');

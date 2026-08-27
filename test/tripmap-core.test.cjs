@@ -37,6 +37,20 @@ test('preserves multi-word Google place names when coordinates are present', () 
   assert.deepEqual(parsed, { lat: 34.772, lng: 32.425, name: 'Some Restaurant' });
 });
 
+test('prefers embedded Google place coordinates over a misleading viewport', () => {
+  const parsed = parseLocationInput('https://www.google.com/maps/place/Zorbas+Bakery+(%CE%A6%CE%BF%CF%8D%CF%81%CE%BD%CE%BF%CF%82+%CE%96%CE%9F%CE%A1%CE%A0%CE%91%CE%A3)/@0,0,64m/data=!3m1!1e3!4m6!3m5!1s0x14e7065db83452a9:0x19df4b4277738f81!8m2!3d34.785459!4d32.4219318!16s%2Fg%2F11h12rdx0?entry=ttu');
+  assert.deepEqual(parsed, {
+    lat: 34.785459,
+    lng: 32.4219318,
+    name: 'Zorbas Bakery (\u03a6\u03bf\u03cd\u03c1\u03bd\u03bf\u03c2 \u0396\u039f\u03a1\u03a0\u0391\u03a3)',
+  });
+});
+
+test('parses the full destination returned by an Apple Maps short link', () => {
+  const parsed = parseLocationInput("https://maps.apple.com/place?address=Dimokratias%20Avenue%2032,%208028%20Paphos,%20Cyprus&coordinate=34.776722,32.443865&name=McDonald's&place-id=I39053CB4E3DAB236&map=h");
+  assert.deepEqual(parsed, { lat: 34.776722, lng: 32.443865, name: "McDonald's" });
+});
+
 test('returns a query for coordinate-free Google Maps links', () => {
   const parsed = parseLocationInput('https://www.google.com/maps/search/?api=1&query=British+Museum');
   assert.deepEqual(parsed, { query: 'British Museum' });
