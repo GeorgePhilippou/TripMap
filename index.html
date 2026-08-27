@@ -1613,19 +1613,27 @@ async function resolveShortLink(url){
   // produces one of these shortened links rather than a full URL with
   // coordinates in it - reading where it actually redirects to requires a
   // server-side hop this static, backend-free app doesn't have on its own.
-  // Neither free service below is rock solid on its own (unshorten.me is
+  // None of the free services below is rock solid on its own (unshorten.me is
   // fast and accurate but caps out at a small daily quota per caller;
   // allorigins has no quota but is noticeably slower and occasionally times
-  // out or errors outright) - trying the quota-limited one first and only
-  // falling through to the slower one when needed gets the best odds out of
-  // either, without standing up real backend infrastructure for this. If
-  // both fail, the caller falls back to its original "can't read this"
-  // message, so this is a pure best-effort improvement, never a regression.
+  // out or errors outright; codetabs is a plain CORS-adding relay rather than
+  // a redirect-resolving API, so it's asked to relay the unshorten.me call
+  // itself - a different failure mode than calling unshorten.me directly, in
+  // case that one's failures are CORS-related rather than quota-related) -
+  // trying the quota-limited one first and falling through only when needed
+  // gets the best odds out of any of them, without standing up real backend
+  // infrastructure for this. If all three fail, the caller falls back to its
+  // original "can't read this" message, so this is a pure best-effort
+  // improvement, never a regression.
   const viaUnshorten = await fetchJson('https://unshorten.me/json/' + encodeURIComponent(url), 6000);
   if (viaUnshorten && viaUnshorten.success && viaUnshorten.resolved_url) return viaUnshorten.resolved_url;
 
   const viaAllOrigins = await fetchJson('https://api.allorigins.win/get?url=' + encodeURIComponent(url), 9000);
   if (viaAllOrigins && viaAllOrigins.status && viaAllOrigins.status.url && viaAllOrigins.status.url !== url) return viaAllOrigins.status.url;
+
+  const unshortenViaCodetabs = 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent('https://unshorten.me/json/' + encodeURIComponent(url));
+  const viaCodetabs = await fetchJson(unshortenViaCodetabs, 9000);
+  if (viaCodetabs && viaCodetabs.success && viaCodetabs.resolved_url) return viaCodetabs.resolved_url;
 
   return null;
 }
