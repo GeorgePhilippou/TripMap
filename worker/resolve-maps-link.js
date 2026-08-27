@@ -18,7 +18,29 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
+  'X-Content-Type-Options': 'nosniff',
 };
+
+const ALLOWED_EXACT_HOSTS = new Set([
+  'maps.app.goo.gl',
+  'maps.apple',
+  'maps.apple.com',
+]);
+
+export function parseAllowedTarget(rawTarget) {
+  let target;
+  try {
+    target = new URL(rawTarget);
+  } catch (error) {
+    return null;
+  }
+
+  if (target.protocol !== 'https:' || target.username || target.password || target.port) return null;
+  const hostname = target.hostname.toLowerCase();
+  if (ALLOWED_EXACT_HOSTS.has(hostname)) return target;
+  if (hostname === 'goo.gl' && target.pathname.startsWith('/maps')) return target;
+  return null;
+}
 
 export default {
   async fetch(request) {
@@ -26,16 +48,24 @@ export default {
       return new Response(null, { headers: CORS_HEADERS });
     }
 
-    const target = new URL(request.url).searchParams.get('url');
-    if (!target) {
+    const rawTarget = new URL(request.url).searchParams.get('url');
+    if (!rawTarget) {
       return new Response(JSON.stringify({ error: 'Missing url parameter' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
       });
     }
 
+    const target = parseAllowedTarget(rawTarget);
+    if (!target) {
+      return new Response(JSON.stringify({ error: 'Only supported Google Maps and Apple Maps short links are allowed' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+      });
+    }
+
     try {
-      const res = await fetch(target, {
+      const res = await fetch(target.toString(), {
         redirect: 'follow',
         headers: { 'User-Agent': MOBILE_USER_AGENT },
       });

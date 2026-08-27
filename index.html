@@ -824,8 +824,18 @@
 <script src="https://unpkg.com/idb-keyval@6/dist/umd.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+<script src="src/tripmap-core.js"></script>
 <script>
 const APP_VERSION = '1.33.1';
+
+const {
+  boundsSpanReasonable,
+  cleanSearchText,
+  computeCountdownText,
+  migratePlaces,
+  parseLocationInput,
+  zoomForPlaceRank,
+} = TripMapCore;
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMggOyb4S3cRiV05mfh8l1Yi7Z6iqyDLA",
@@ -864,7 +874,6 @@ const CATEGORIES = [
 ];
 const CAT_BY_KEY = Object.fromEntries(CATEGORIES.map(c => [c.key, c]));
 const DEFAULT_VISIBLE_CATEGORIES = CATEGORIES.filter(c => c.key !== 'hike').map(c => c.key);
-const CATEGORY_MIGRATIONS = { hotel:'stays', other:'general' };
 
 let map, markers = {}, currentTrip = null, currentTripFile = null, editingId = null, pendingLatLng = null;
 let heroMap, heroMarkersLayer, sideMap, sideMarkersLayer;
@@ -970,23 +979,6 @@ function formatRelativeTime(ts){
   const day = Math.floor(hr / 24);
   if (day < 7) return `${day}d ago`;
   return `${Math.floor(day / 7)}w ago`;
-}
-function computeCountdownText(start, end){
-  if (!start) return null;
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const startD = new Date(start + 'T00:00:00');
-  const endD = end ? new Date(end + 'T00:00:00') : startD;
-  const oneDay = 86400000;
-  if (today < startD){
-    const days = Math.round((startD - today) / oneDay);
-    return days === 1 ? '1 day to go' : `${days} days to go`;
-  }
-  if (today <= endD){
-    const day = Math.round((today - startD) / oneDay) + 1;
-    const total = Math.round((endD - startD) / oneDay) + 1;
-    return total > 1 ? `Day ${day} of ${total}` : 'Today';
-  }
-  return 'Trip complete';
 }
 function weatherIcon(code){
   if (code === 0) return svgIcon('<circle cx="10" cy="10" r="4"/><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.5 4.5l1.4 1.4M14.1 14.1l1.4 1.4M4.5 15.5l1.4-1.4M14.1 5.9l1.4-1.4"/>');
@@ -1219,42 +1211,6 @@ function saveTrip(){
   if (fbDb){
     fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(currentTripFile) + '/places').set(clean);
   }
-}
-function zoomForPlaceRank(rank){
-  if (rank == null) return 9;
-  if (rank <= 4) return 5;   // continent / country
-  if (rank <= 8) return 7;   // state / province / metropolis
-  if (rank <= 10) return 9;  // county / large region
-  if (rank <= 12) return 10; // large city / metro area
-  if (rank <= 16) return 12; // city / town
-  if (rank <= 18) return 14; // suburb / neighbourhood
-  return 15;
-}
-function boundsSpanReasonable(bounds, rank){
-  if (!bounds) return false;
-  const [[south, west], [north, east]] = bounds;
-  const span = Math.max(north - south, east - west);
-  const maxAllowed = rank == null ? 15
-    : rank <= 4 ? 70 : rank <= 8 ? 15 : rank <= 10 ? 6 : rank <= 12 ? 2.5 : rank <= 16 ? 1.2 : 0.6;
-  return span <= maxAllowed;
-}
-const LOCALITY_FORMAT_VERSION = 2;
-function migratePlaces(places){
-  let changed = false;
-  places.forEach(p => {
-    if (CATEGORY_MIGRATIONS[p.category]){ p.category = CATEGORY_MIGRATIONS[p.category]; changed = true; }
-    if (p.locality !== undefined && p.localityV !== LOCALITY_FORMAT_VERSION){
-      delete p.locality; // re-resolve under the improved area-name logic
-      p.localityV = LOCALITY_FORMAT_VERSION;
-      changed = true;
-    }
-    if (!p.photos){
-      p.photos = p.photo ? [p.photo] : [];
-      delete p.photo;
-      changed = true;
-    }
-  });
-  return changed;
 }
 function resizeImageFile(file, maxDim, quality){
   return new Promise((resolve, reject) => {
@@ -1553,80 +1509,6 @@ function selectSearchResult(r){
   map.flyTo([lat, lon], 16);
   openEditor(null, { lat, lng: lon });
   el('f-name').value = r.display_name.split(',')[0];
-}
-function cleanSearchText(raw){
-  // Maps apps often copy an address as multiple lines (name / street / city /
-  // country). A single-line <input> silently drops the line breaks on paste,
-  // jamming everything into one unreadable word and breaking geocoding -
-  // turn line breaks into comma separators instead, like a normal address.
-  return (raw || '').replace(/[\r\n]+/g, ', ').replace(/\s{2,}/g, ' ').trim();
-}
-function parseLocationInput(raw){
-  const text = (raw || '').trim();
-  if (!text) return null;
-
-  const coordMatch = text.match(/^(-?\d{1,3}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)$/);
-  if (coordMatch){
-    const lat = parseFloat(coordMatch[1]), lng = parseFloat(coordMatch[2]);
-    if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) return { lat, lng, name: '' };
-  }
-
-  // If the whole trimmed input is already a URL, use it as-is rather than
-  // re-extracting it with a "no whitespace" regex - a share/URL param can
-  // legitimately contain a decoded literal space (Google Maps encodes a
-  // multi-word place name as "Some+Restaurant", which is already a plain
-  // space by the time this code sees it), and stopping at the first space
-  // would silently truncate the place name and everything after it,
-  // including the @lat,lng that makes the link useful at all. The \S+
-  // extraction is still needed for the "sentence with a link in it" case,
-  // where a URL is genuinely mixed in with other text.
-  const url = /^https?:\/\//.test(text) ? text : (text.match(/https?:\/\/\S+/) || [])[0] || null;
-  if (url){
-    let u;
-    try { u = new URL(url); } catch (err) { return { query: text }; }
-
-    if (u.hostname.includes('maps.apple.com')){
-      const ll = u.searchParams.get('ll') || u.searchParams.get('coordinate');
-      const name = u.searchParams.get('q') || u.searchParams.get('name') || '';
-      if (ll){
-        const [lat, lng] = ll.split(',').map(parseFloat);
-        if (!isNaN(lat) && !isNaN(lng)) return { lat, lng, name };
-      }
-      // No exact coordinates in the link, but a name/address is still a usable search query.
-      const fallback = name || u.searchParams.get('address');
-      if (fallback) return { query: fallback };
-    }
-
-    // Google Maps puts "maps" in the path (google.com/maps/...) almost everywhere,
-    // but the maps.google.* subdomain form puts it in the hostname instead.
-    if ((u.hostname.includes('google.') && u.pathname.includes('/maps')) || u.hostname.startsWith('maps.google.')){
-      let name = '';
-      const placeMatch = u.pathname.match(/\/place\/([^/@]+)/);
-      if (placeMatch) name = decodeURIComponent(placeMatch[1].replace(/\+/g, ' '));
-      const qParam = u.searchParams.get('q') || u.searchParams.get('query');
-      const qIsCoords = qParam && /^-?\d+\.\d+,-?\d+\.\d+$/.test(qParam);
-      if (qIsCoords){
-        const [lat, lng] = qParam.split(',').map(parseFloat);
-        return { lat, lng, name };
-      }
-      const atMatch = u.href.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
-      if (atMatch) return { lat: parseFloat(atMatch[1]), lng: parseFloat(atMatch[2]), name };
-      // No coordinates anywhere in the URL - Maps links very often carry the place
-      // name as plain text (q=, query=, or the /place/Name/ path segment) instead,
-      // which is just as usable as if it had been typed into search directly.
-      const fallback = name || (qParam ? decodeURIComponent(qParam.replace(/\+/g, ' ')) : '');
-      if (fallback) return { query: fallback };
-    }
-
-    // Shortened link (e.g. maps.app.goo.gl, goo.gl/maps) or an unrecognized maps
-    // URL with no name or coordinates anywhere in it - the real destination is
-    // only known server-side, and this parser is synchronous. The caller
-    // (handleParsedLocation) takes the "unresolved" result and makes an async
-    // attempt to follow the redirect through a proxy before giving up.
-    return { unresolved: true, url };
-  }
-
-  return { query: text };
 }
 async function fetchJson(url, timeoutMs){
   const controller = new AbortController();

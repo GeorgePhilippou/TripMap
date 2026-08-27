@@ -1,0 +1,12 @@
+{
+  "name": "tripmap",
+  "version": "1.33.1",
+  "private": true,
+  "description": "A collaborative, mobile-first trip planning map.",
+  "scripts": {
+    "test": "node scripts/validate.mjs && node --test test/*.test.cjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
