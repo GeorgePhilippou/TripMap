@@ -1641,32 +1641,42 @@ async function fetchJson(url, timeoutMs){
     clearTimeout(timeout);
   }
 }
+async function fetchText(url, timeoutMs){
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) return null;
+    return await res.text();
+  } catch (err) {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 async function resolveShortLink(url){
   // Sharing a pin from the Google Maps or Apple Maps *app* almost always
-  // produces one of these shortened links rather than a full URL with
-  // coordinates in it - reading where it actually redirects to requires a
-  // server-side hop this static, backend-free app doesn't have on its own.
-  // None of the free services below is rock solid on its own (unshorten.me is
-  // fast and accurate but caps out at a small daily quota per caller;
-  // allorigins has no quota but is noticeably slower and occasionally times
-  // out or errors outright; codetabs is a plain CORS-adding relay rather than
-  // a redirect-resolving API, so it's asked to relay the unshorten.me call
-  // itself - a different failure mode than calling unshorten.me directly, in
-  // case that one's failures are CORS-related rather than quota-related) -
-  // trying the quota-limited one first and falling through only when needed
-  // gets the best odds out of any of them, without standing up real backend
-  // infrastructure for this. If all three fail, the caller falls back to its
+  // produces one of these shortened links (maps.app.goo.gl, maps.apple/p/...)
+  // rather than a full URL with coordinates in it - reading where it actually
+  // redirects to requires a server-side hop this static, backend-free app
+  // doesn't have on its own. unshorten.me used to cover this for free but has
+  // since moved its unshortening endpoint behind a paid API token, so it's no
+  // longer usable here at all. allorigins has no such wall but has a known,
+  // long-standing bug where roughly half its requests come back with a
+  // missing CORS header and a 500 - not down, just a coin flip - so a second,
+  // unrelated service (Jina's page reader, which reports the final URL it
+  // landed on after following redirects) is tried as well to cover the times
+  // allorigins loses that flip. If both fail, the caller falls back to its
   // original "can't read this" message, so this is a pure best-effort
   // improvement, never a regression.
-  const viaUnshorten = await fetchJson('https://unshorten.me/json/' + encodeURIComponent(url), 6000);
-  if (viaUnshorten && viaUnshorten.success && viaUnshorten.resolved_url) return viaUnshorten.resolved_url;
-
   const viaAllOrigins = await fetchJson('https://api.allorigins.win/get?url=' + encodeURIComponent(url), 9000);
   if (viaAllOrigins && viaAllOrigins.status && viaAllOrigins.status.url && viaAllOrigins.status.url !== url) return viaAllOrigins.status.url;
 
-  const unshortenViaCodetabs = 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent('https://unshorten.me/json/' + encodeURIComponent(url));
-  const viaCodetabs = await fetchJson(unshortenViaCodetabs, 9000);
-  if (viaCodetabs && viaCodetabs.success && viaCodetabs.resolved_url) return viaCodetabs.resolved_url;
+  const viaJina = await fetchText('https://r.jina.ai/' + url, 9000);
+  if (viaJina){
+    const match = viaJina.match(/^URL Source:\s*(\S+)/m);
+    if (match && match[1] && match[1] !== url) return match[1];
+  }
 
   return null;
 }
