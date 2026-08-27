@@ -5,6 +5,58 @@
 }(typeof globalThis !== 'undefined' ? globalThis : this, function createTripMapCore() {
   const CATEGORY_MIGRATIONS = { hotel: 'stays', other: 'general' };
   const LOCALITY_FORMAT_VERSION = 2;
+  const FIREBASE_KEY_FORBIDDEN = /[.#$\[\]/]/;
+
+  function isValidRoomCode(roomCode) {
+    return typeof roomCode === 'string' && /^[A-Za-z0-9_-]{6,80}$/.test(roomCode);
+  }
+
+  function generatePrivateRoomCode(fillRandomValues) {
+    const bytes = new Uint8Array(18);
+    const fill = fillRandomValues || (array => crypto.getRandomValues(array));
+    fill(bytes);
+    const encoded = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+    return `trip_${encoded}`;
+  }
+
+  function buildRoomInviteUrl(baseUrl, roomCode) {
+    if (!isValidRoomCode(roomCode)) throw new Error('Invalid room code');
+    const inviteUrl = new URL(baseUrl);
+    inviteUrl.search = '';
+    inviteUrl.hash = new URLSearchParams({ room: roomCode }).toString();
+    return inviteUrl.toString();
+  }
+
+  function roomCodeFromHash(hash) {
+    const value = new URLSearchParams((hash || '').replace(/^#/, '')).get('room');
+    return isValidRoomCode(value) ? value : null;
+  }
+
+  function placesFromRemote(remote) {
+    if (Array.isArray(remote)) return remote.filter(place => place && typeof place === 'object');
+    if (remote && typeof remote === 'object') {
+      return Object.values(remote).filter(place => place && typeof place === 'object');
+    }
+    return [];
+  }
+
+  function placesRecordNeedsMigration(remote) {
+    if (Array.isArray(remote)) return true;
+    if (!remote || typeof remote !== 'object') return false;
+    return Object.entries(remote).some(([key, place]) => place && typeof place === 'object' && place.id !== key);
+  }
+
+  function placesToRecord(places) {
+    const record = {};
+    places.forEach(place => {
+      if (!place || typeof place !== 'object' || typeof place.id !== 'string' || !place.id || FIREBASE_KEY_FORBIDDEN.test(place.id)) {
+        throw new Error('Every synced place needs a Firebase-safe string ID');
+      }
+      if (record[place.id]) throw new Error(`Duplicate place ID: ${place.id}`);
+      record[place.id] = place;
+    });
+    return record;
+  }
 
   function computeCountdownText(start, end, now) {
     if (!start) return null;
@@ -127,10 +179,18 @@
 
   return {
     boundsSpanReasonable,
+    buildRoomInviteUrl,
     cleanSearchText,
     computeCountdownText,
+    generatePrivateRoomCode,
+    isValidRoomCode,
+    LOCALITY_FORMAT_VERSION,
     migratePlaces,
     parseLocationInput,
+    placesFromRemote,
+    placesRecordNeedsMigration,
+    placesToRecord,
+    roomCodeFromHash,
     zoomForPlaceRank,
   };
 }));

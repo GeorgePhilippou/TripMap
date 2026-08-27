@@ -1,6 +1,6 @@
 {
   "name": "tripmap",
-  "version": "1.33.1",
+  "version": "1.34.0",
   "private": true,
   "description": "A collaborative, mobile-first trip planning map.",
   "scripts": {

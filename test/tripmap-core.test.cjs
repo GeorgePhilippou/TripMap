@@ -2,10 +2,17 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   boundsSpanReasonable,
+  buildRoomInviteUrl,
   cleanSearchText,
   computeCountdownText,
+  generatePrivateRoomCode,
+  isValidRoomCode,
   migratePlaces,
   parseLocationInput,
+  placesFromRemote,
+  placesRecordNeedsMigration,
+  placesToRecord,
+  roomCodeFromHash,
   zoomForPlaceRank,
 } = require('../src/tripmap-core.js');
 
@@ -59,4 +66,37 @@ test('migrates legacy categories, locality metadata, and photos once', () => {
   assert.equal(migratePlaces(places), true);
   assert.deepEqual(places, [{ category: 'stays', localityV: 2, photos: ['data:image/jpeg;base64,x'] }]);
   assert.equal(migratePlaces(places), false);
+});
+
+test('generates high-entropy private room codes in a Firebase-safe format', () => {
+  const room = generatePrivateRoomCode(bytes => bytes.forEach((_, index) => { bytes[index] = index; }));
+  assert.equal(room, 'trip_000102030405060708090a0b0c0d0e0f1011');
+  assert.equal(isValidRoomCode(room), true);
+  assert.equal(isValidRoomCode('bad/room'), false);
+  assert.equal(isValidRoomCode('short'), false);
+});
+
+test('builds and reads fragment-based room invites without retaining query data', () => {
+  const room = 'trip_000102030405060708090a0b0c0d0e0f1011';
+  const invite = buildRoomInviteUrl('https://example.com/tripmap/?old=value#previous', room);
+  assert.equal(invite, `https://example.com/tripmap/#room=${room}`);
+  assert.equal(roomCodeFromHash(new URL(invite).hash), room);
+  assert.equal(roomCodeFromHash('#room=bad%2Froom'), null);
+});
+
+test('converts legacy place arrays to ID-keyed records and back', () => {
+  const places = [{ id: 'one', name: 'One' }, { id: 'two', name: 'Two' }];
+  const record = placesToRecord(places);
+  assert.deepEqual(record, { one: places[0], two: places[1] });
+  assert.deepEqual(placesFromRemote(record), places);
+  assert.deepEqual(placesFromRemote(places), places);
+  assert.deepEqual(placesFromRemote(null), []);
+  assert.equal(placesRecordNeedsMigration(places), true);
+  assert.equal(placesRecordNeedsMigration(record), false);
+  assert.equal(placesRecordNeedsMigration({ 0: places[0], two: places[1] }), true);
+});
+
+test('refuses unsafe or duplicate place IDs before a collection write', () => {
+  assert.throws(() => placesToRecord([{ id: 'bad/id' }]), /Firebase-safe/);
+  assert.throws(() => placesToRecord([{ id: 'same' }, { id: 'same' }]), /Duplicate place ID/);
 });

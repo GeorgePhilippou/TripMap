@@ -6,7 +6,14 @@ import vm from 'node:vm';
 const root = resolve(import.meta.dirname, '..');
 const read = path => readFile(resolve(root, path), 'utf8');
 
-const jsonFiles = ['manifest.json', 'trips/index.json', 'trips/cyprus.json', 'trips/amsterdam.json'];
+const jsonFiles = [
+  'manifest.json',
+  'firebase.json',
+  'database.rules.json',
+  'trips/index.json',
+  'trips/cyprus.json',
+  'trips/amsterdam.json',
+];
 const parsedJson = new Map();
 for (const file of jsonFiles) parsedJson.set(file, JSON.parse(await read(file)));
 
@@ -18,6 +25,8 @@ for (const tripFile of tripIndex) {
 
 const indexHtml = await read('index.html');
 assert.match(indexHtml, /<script src="src\/tripmap-core\.js"><\/script>/, 'index.html must load the tested core utilities');
+assert.match(indexHtml, /firebase-auth-compat\.js/, 'index.html must load Firebase Authentication before starting sync');
+assert.match(indexHtml, /LOCAL_OFFLINE_MODE/, 'index.html must retain a localhost-only, side-effect-free smoke-test mode');
 const inlineScripts = [...indexHtml.matchAll(/<script>([\s\S]*?)<\/script>/g)];
 assert.ok(inlineScripts.length > 0, 'index.html must contain its application script');
 for (const [, source] of inlineScripts) new vm.Script(source, { filename: 'index.html:inline-script' });
@@ -27,5 +36,11 @@ new vm.Script(await read('sw.js'), { filename: 'sw.js' });
 
 const workerSource = await read('worker/resolve-maps-link.js');
 await import(`data:text/javascript;base64,${Buffer.from(workerSource).toString('base64')}`);
+
+const rules = parsedJson.get('database.rules.json').rules;
+assert.equal(rules['.read'], false, 'database root reads must be denied');
+assert.equal(rules['.write'], false, 'database root writes must be denied');
+assert.equal(rules.rooms.$room['.read'], 'auth != null', 'room reads must require authentication');
+assert.equal(rules.rooms.$room['.write'], 'auth != null', 'room writes must require authentication');
 
 console.log(`Validated ${jsonFiles.length} JSON files and all local JavaScript entry points.`);

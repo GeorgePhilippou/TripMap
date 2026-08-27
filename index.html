@@ -806,6 +806,8 @@
     <div class="menu-item" id="catSettingsItem"><span>Homepage categories</span><span>&#8250;</span></div>
     <div class="menu-label">Sharing</div>
     <div class="menu-item" id="roomItem"><span>Sync room</span><span id="roomStatus">&#8250;</span></div>
+    <div class="menu-item" id="privateRoomItem"><span>Create private room</span><span>+</span></div>
+    <div class="menu-item" id="shareRoomItem"><span>Share room invite</span><span>&#8599;</span></div>
     <div class="menu-item" id="userNameItem"><span>Your name</span><span id="userNameStatus">&#8250;</span></div>
     <div class="menu-label">Data</div>
     <div class="menu-item" id="exportItem"><span>Export JSON</span><span>&#8595;</span></div>
@@ -823,17 +825,26 @@
 <script src="https://unpkg.com/photoswipe@5/dist/umd/photoswipe-lightbox.umd.min.js"></script>
 <script src="https://unpkg.com/idb-keyval@6/dist/umd.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script src="src/tripmap-core.js"></script>
 <script>
-const APP_VERSION = '1.33.1';
+const APP_VERSION = '1.34.0';
 
 const {
   boundsSpanReasonable,
+  buildRoomInviteUrl,
   cleanSearchText,
   computeCountdownText,
+  generatePrivateRoomCode,
+  isValidRoomCode,
+  LOCALITY_FORMAT_VERSION,
   migratePlaces,
   parseLocationInput,
+  placesFromRemote,
+  placesRecordNeedsMigration,
+  placesToRecord,
+  roomCodeFromHash,
   zoomForPlaceRank,
 } = TripMapCore;
 
@@ -849,12 +860,97 @@ const FIREBASE_CONFIG = {
 const DEFAULT_ROOM = 'philippou-megan-8x4q';
 const ROOM_KEY = 'tripmap:room';
 const LOCAL_TRIPS_KEY = 'tripmap:localtrips';
-let fbApp, fbDb, fbRef, fbDatesRef, fbFlightsRef, fbChecklistRef, fbCategoryCoversRef;
+const LOCAL_OFFLINE_MODE = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(location.hostname)
+  && new URLSearchParams(location.search).get('offline') === '1';
+let fbApp, fbAuth, fbDb, fbRef, fbDatesRef, fbFlightsRef, fbChecklistRef, fbCategoryCoversRef;
+let firebaseIdentityReady = false;
 try {
-  fbApp = firebase.initializeApp(FIREBASE_CONFIG);
-  fbDb = firebase.database();
+  if (!LOCAL_OFFLINE_MODE){
+    fbApp = firebase.initializeApp(FIREBASE_CONFIG);
+    fbAuth = firebase.auth();
+    fbDb = firebase.database();
+  }
 } catch (e) { console.error('Firebase init failed', e); }
-function getRoom(){ return localStorage.getItem(ROOM_KEY) || DEFAULT_ROOM; }
+function getRoom(){
+  const saved = localStorage.getItem(ROOM_KEY);
+  return isValidRoomCode(saved) ? saved : DEFAULT_ROOM;
+}
+function roomStorageKey(kind, file, room = getRoom()){
+  return `tripmap:${kind}:${room}:${file}`;
+}
+function readRoomStorage(kind, file){
+  const scopedKey = roomStorageKey(kind, file);
+  const scoped = localStorage.getItem(scopedKey);
+  if (scoped !== null) return scoped;
+  // Existing installations used room-agnostic keys. Adopt them only for the
+  // original room; copying them into a different room could expose one room's
+  // cached data to another and then upload it as if it belonged there.
+  if (getRoom() !== DEFAULT_ROOM) return null;
+  const legacy = localStorage.getItem(`tripmap:${kind}:${file}`);
+  if (legacy !== null) safeLocalStorageSet(scopedKey, legacy);
+  return legacy;
+}
+async function initializeFirebaseIdentity(){
+  if (!fbAuth) return false;
+  try {
+    if (!fbAuth.currentUser) await fbAuth.signInAnonymously();
+    firebaseIdentityReady = Boolean(fbAuth.currentUser);
+    return firebaseIdentityReady;
+  } catch (err) {
+    // Keep the current unauthenticated behaviour available during the staged
+    // rollout. Once authenticated database rules are deployed, Anonymous Auth
+    // must already be enabled or Firebase sync will correctly stop working.
+    console.warn('Anonymous Firebase sign-in is not available; continuing in legacy sync mode.', err);
+    return false;
+  }
+}
+function updateRoomStatus(){
+  const room = getRoom();
+  el('roomStatus').textContent = !fbDb ? 'offline'
+    : !firebaseIdentityReady ? 'Legacy sync'
+    : room === DEFAULT_ROOM ? 'Legacy room'
+    : room.slice(0, 12) + '…';
+}
+function applyRoomInviteFromLocation(){
+  const invitedRoom = roomCodeFromHash(location.hash);
+  if (!invitedRoom) return false;
+  safeLocalStorageSet(ROOM_KEY, invitedRoom);
+  history.replaceState(null, '', location.pathname + location.search);
+  return true;
+}
+async function switchRoom(nextRoom){
+  if (!isValidRoomCode(nextRoom)) throw new Error('Room codes use 6–80 letters, numbers, underscores, or hyphens.');
+  safeLocalStorageSet(ROOM_KEY, nextRoom);
+  updateRoomStatus();
+  setTrip(currentTripFile, currentTrip);
+}
+async function createPrivateRoom(){
+  if (!currentTrip || !fbDb) throw new Error('Firebase sync is not available.');
+  const newRoom = generatePrivateRoomCode();
+  const snapshot = JSON.parse(JSON.stringify(currentTrip));
+  const tripData = {
+    places: placesToRecord(snapshot.places || []),
+    dates: { start: snapshot.startDate || null, end: snapshot.endDate || null },
+    flights: snapshot.flights || [],
+    checklist: snapshot.checklist || [],
+    categoryCovers: snapshot.categoryCovers || {},
+  };
+  await fbDb.ref('rooms/' + newRoom + '/trips/' + tripKey(currentTripFile)).set(tripData);
+  await switchRoom(newRoom);
+  return newRoom;
+}
+async function shareCurrentRoom(){
+  const inviteUrl = buildRoomInviteUrl(location.href, getRoom());
+  const shareData = { title: `${currentTrip.name} · TripMap`, text: 'Join my private TripMap room.', url: inviteUrl };
+  if (navigator.share){
+    try { await navigator.share(shareData); } catch (err) { if (err.name !== 'AbortError') throw err; }
+  } else if (navigator.clipboard){
+    await navigator.clipboard.writeText(inviteUrl);
+    alert('Private room invite copied to the clipboard.');
+  } else {
+    prompt('Copy this private room invite:', inviteUrl);
+  }
+}
 
 function svgIcon(paths){
   return `<svg viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
@@ -950,7 +1046,7 @@ function ensureLocality(p){
         const data = await res.json();
         p.locality = extractLocality(data.address) || null; // null = genuinely no locality-level data, cache it
         p.localityV = LOCALITY_FORMAT_VERSION;
-        saveTrip();
+        savePlace(p);
         if (activeCategory === p.category && el('screen-category').classList.contains('active')) openCategory(activeCategory);
       } catch (err) {
         // leave p.locality undefined so a transient failure gets retried next time this category is opened,
@@ -1100,18 +1196,31 @@ async function loadLocalPlaces(file){
   // actual cause of a "can't save" bug fixed earlier. IndexedDB (via
   // idb-keyval) has a dramatically higher ceiling, so only this cache moved
   // there; everything else here is small enough to stay on localStorage.
+  const scopedKey = roomStorageKey('content', file);
   try {
-    const fromIdb = await idbKeyval.get('tripmap:content:' + file);
+    const fromIdb = await idbKeyval.get(scopedKey);
     if (fromIdb) return fromIdb;
   } catch (err) { /* fall through to the legacy cache below */ }
+  if (getRoom() === DEFAULT_ROOM){
+    try {
+      const legacyIdbKey = 'tripmap:content:' + file;
+      const legacyIdb = await idbKeyval.get(legacyIdbKey);
+      if (legacyIdb){
+        await idbKeyval.set(scopedKey, legacyIdb);
+        await idbKeyval.del(legacyIdbKey);
+        return legacyIdb;
+      }
+    } catch (err) { /* fall through to the older localStorage cache */ }
+  }
   // One-time migration for anyone who had this cached before the move to
   // IndexedDB - read the old key once, copy it over, then stop touching it.
-  const legacy = localStorage.getItem('tripmap:content:' + file);
+  const legacyKey = 'tripmap:content:' + file;
+  const legacy = getRoom() === DEFAULT_ROOM ? localStorage.getItem(legacyKey) : null;
   if (legacy){
     try {
       const parsed = JSON.parse(legacy);
-      await idbKeyval.set('tripmap:content:' + file, parsed);
-      localStorage.removeItem('tripmap:content:' + file);
+      await idbKeyval.set(scopedKey, parsed);
+      localStorage.removeItem(legacyKey);
       return parsed;
     } catch (err) { /* ignore a corrupt legacy cache and start fresh */ }
   }
@@ -1119,21 +1228,21 @@ async function loadLocalPlaces(file){
 }
 async function saveLocalPlaces(file, places){
   try {
-    await idbKeyval.set('tripmap:content:' + file, places);
+    await idbKeyval.set(roomStorageKey('content', file), places);
   } catch (err) {
     console.warn('idbKeyval.set failed for places cache, continuing without local cache:', err);
   }
 }
 function loadVisibleCategories(file){
-  const saved = localStorage.getItem('tripmap:visible:' + file);
+  const saved = readRoomStorage('visible', file);
   return saved ? JSON.parse(saved) : DEFAULT_VISIBLE_CATEGORIES.slice();
 }
 function saveVisibleCategories(file, arr){
-  safeLocalStorageSet('tripmap:visible:' + file, JSON.stringify(arr));
+  safeLocalStorageSet(roomStorageKey('visible', file), JSON.stringify(arr));
 }
 function loadCategoryOrder(file){
   const allKeys = CATEGORIES.map(c => c.key);
-  const saved = localStorage.getItem('tripmap:order:' + file);
+  const saved = readRoomStorage('order', file);
   const order = saved ? JSON.parse(saved) : allKeys.slice();
   // Reconcile against the current category list, in case it's changed since
   // this order was saved: drop stale keys, append any new ones at the end.
@@ -1142,14 +1251,14 @@ function loadCategoryOrder(file){
   return cleaned;
 }
 function saveCategoryOrder(file, arr){
-  safeLocalStorageSet('tripmap:order:' + file, JSON.stringify(arr));
+  safeLocalStorageSet(roomStorageKey('order', file), JSON.stringify(arr));
 }
 function loadLocalDates(file){
-  const saved = localStorage.getItem('tripmap:dates:' + file);
+  const saved = readRoomStorage('dates', file);
   return saved ? JSON.parse(saved) : { start: null, end: null };
 }
 function saveChecklist(){
-  safeLocalStorageSet('tripmap:checklist:' + currentTripFile, JSON.stringify(currentTrip.checklist));
+  safeLocalStorageSet(roomStorageKey('checklist', currentTripFile), JSON.stringify(currentTrip.checklist));
   if (fbDb){
     fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(currentTripFile) + '/checklist').set(currentTrip.checklist);
   }
@@ -1200,17 +1309,43 @@ function renderChecklistViews(){
 }
 function saveDates(){
   const dates = { start: currentTrip.startDate || null, end: currentTrip.endDate || null };
-  safeLocalStorageSet('tripmap:dates:' + currentTripFile, JSON.stringify(dates));
+  safeLocalStorageSet(roomStorageKey('dates', currentTripFile), JSON.stringify(dates));
   if (fbDb){
     fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(currentTripFile) + '/dates').set(dates);
   }
 }
-function saveTrip(){
+function reportSyncWriteError(err){
+  console.error('Firebase sync write failed', err);
+  if (el('roomStatus')) el('roomStatus').textContent = 'Sync error';
+}
+function cacheCurrentPlaces(){
   const clean = JSON.parse(JSON.stringify(currentTrip.places));
   saveLocalPlaces(currentTripFile, clean);
-  if (fbDb){
-    fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(currentTripFile) + '/places').set(clean);
-  }
+  return clean;
+}
+// Full-collection writes are reserved for explicit imports and one-time
+// legacy migrations. Normal edits use savePlace/savePlaces/removePlace so
+// two collaborators changing different places cannot overwrite each other.
+function saveTrip(){
+  const clean = cacheCurrentPlaces();
+  if (fbRef) fbRef.set(placesToRecord(clean)).catch(reportSyncWriteError);
+}
+function savePlace(place){
+  cacheCurrentPlaces();
+  if (!fbRef || !place) return;
+  const clean = JSON.parse(JSON.stringify(place));
+  fbRef.child(clean.id).set(clean).catch(reportSyncWriteError);
+}
+function savePlaces(places){
+  cacheCurrentPlaces();
+  if (!fbRef || !places.length) return;
+  const updates = {};
+  places.forEach(place => { updates[place.id] = JSON.parse(JSON.stringify(place)); });
+  fbRef.update(updates).catch(reportSyncWriteError);
+}
+function removePlace(placeId){
+  cacheCurrentPlaces();
+  if (fbRef) fbRef.child(placeId).remove().catch(reportSyncWriteError);
 }
 function resizeImageFile(file, maxDim, quality){
   return new Promise((resolve, reject) => {
@@ -1690,13 +1825,12 @@ function confirmBulkImport(){
   const category = el('bulkCategory').value;
   const toAdd = bulkRows.filter(r => r.status === 'resolved' && r.selected);
   if (!toAdd.length) return;
-  toAdd.forEach(row => {
-    currentTrip.places.push({
+  const addedPlaces = toAdd.map(row => ({
       id: uid(), lat: row.lat, lng: row.lng, addedBy: getUserName(), addedAt: Date.now(),
       name: row.name, category, visited: false, day: null, notes: '', photos: []
-    });
-  });
-  saveTrip();
+    }));
+  currentTrip.places.push(...addedPlaces);
+  savePlaces(addedPlaces);
   renderMarkers();
   renderHome();
   bulkRows = [];
@@ -2058,7 +2192,7 @@ function getCategoryCoverPhoto(key){
   return pool.length ? pool[0].photo : null;
 }
 function saveCategoryCovers(){
-  safeLocalStorageSet('tripmap:covers:' + currentTripFile, JSON.stringify(currentTrip.categoryCovers || {}));
+  safeLocalStorageSet(roomStorageKey('covers', currentTripFile), JSON.stringify(currentTrip.categoryCovers || {}));
   if (fbDb){
     fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(currentTripFile) + '/categoryCovers').set(currentTrip.categoryCovers || {});
   }
@@ -2113,7 +2247,7 @@ const CHECK_ICON = '<svg class="check-icon" viewBox="0 0 16 16" width="11" heigh
 function toggleVisitedInline(p, div, refreshFn){
   p.visited = !p.visited;
   div.classList.toggle('visited', p.visited);
-  saveTrip();
+  savePlace(p);
   renderHome();
   // Let the tap-to-check animation actually play before the list re-sorts
   // the row out from under it (unvisited-first sort would otherwise move
@@ -2380,7 +2514,7 @@ function nextUpcomingFlight(){
 }
 function saveFlights(){
   const clean = JSON.parse(JSON.stringify(currentTrip.flights));
-  safeLocalStorageSet('tripmap:flights:' + currentTripFile, JSON.stringify(clean));
+  safeLocalStorageSet(roomStorageKey('flights', currentTripFile), JSON.stringify(clean));
   if (fbDb){
     fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(currentTripFile) + '/flights').set(clean);
   }
@@ -2544,12 +2678,15 @@ function saveEditor(){
     notes: el('f-notes').value.trim(),
     photos: pendingPhotos
   };
+  let savedPlace = null;
   if (editingId){
-    Object.assign(currentTrip.places.find(p => p.id === editingId), data);
+    savedPlace = currentTrip.places.find(p => p.id === editingId);
+    Object.assign(savedPlace, data);
   } else if (pendingLatLng){
-    currentTrip.places.push({ id: uid(), lat: pendingLatLng.lat, lng: pendingLatLng.lng, addedBy: getUserName(), addedAt: Date.now(), ...data });
+    savedPlace = { id: uid(), lat: pendingLatLng.lat, lng: pendingLatLng.lng, addedBy: getUserName(), addedAt: Date.now(), ...data };
+    currentTrip.places.push(savedPlace);
   }
-  saveTrip();
+  savePlace(savedPlace);
   renderMarkers();
   renderHome();
   if (activeCategory) openCategory(activeCategory);
@@ -2571,7 +2708,7 @@ function undoDelete(){
   if (!lastDeleted) return;
   clearTimeout(undoTimer);
   currentTrip.places.push(lastDeleted.place);
-  saveTrip();
+  savePlace(lastDeleted.place);
   renderMarkers();
   renderHome();
   if (activeCategory) openCategory(activeCategory);
@@ -2583,7 +2720,7 @@ function deletePlace(){
   const place = currentTrip.places.find(p => p.id === editingId);
   if (!place) { closeEditor(); return; }
   currentTrip.places = currentTrip.places.filter(p => p.id !== editingId);
-  saveTrip();
+  removePlace(editingId);
   renderMarkers();
   renderHome();
   if (activeCategory) openCategory(activeCategory);
@@ -2636,7 +2773,7 @@ function setTrip(file, definition){
       const remote = snap.val();
       currentTrip.startDate = (remote && remote.start) || null;
       currentTrip.endDate = (remote && remote.end) || null;
-      safeLocalStorageSet('tripmap:dates:' + file, JSON.stringify({ start: currentTrip.startDate, end: currentTrip.endDate }));
+      safeLocalStorageSet(roomStorageKey('dates', file), JSON.stringify({ start: currentTrip.startDate, end: currentTrip.endDate }));
       renderHome();
     });
   } else {
@@ -2652,12 +2789,12 @@ function setTrip(file, definition){
       if (file !== currentTripFile) return;
       const remote = snap.val();
       currentTrip.flights = Array.isArray(remote) ? remote : (remote && typeof remote === 'object') ? Object.values(remote) : [];
-      safeLocalStorageSet('tripmap:flights:' + file, JSON.stringify(currentTrip.flights));
+      safeLocalStorageSet(roomStorageKey('flights', file), JSON.stringify(currentTrip.flights));
       renderHome();
       if (el('screen-flights').classList.contains('active')) renderFlightsScreen();
     });
   } else {
-    const saved = localStorage.getItem('tripmap:flights:' + file);
+    const saved = readRoomStorage('flights', file);
     currentTrip.flights = saved ? JSON.parse(saved) : [];
     renderHome();
   }
@@ -2668,11 +2805,11 @@ function setTrip(file, definition){
       if (file !== currentTripFile) return;
       const remote = snap.val();
       currentTrip.checklist = Array.isArray(remote) ? remote : (remote && typeof remote === 'object') ? Object.values(remote) : [];
-      safeLocalStorageSet('tripmap:checklist:' + file, JSON.stringify(currentTrip.checklist));
+      safeLocalStorageSet(roomStorageKey('checklist', file), JSON.stringify(currentTrip.checklist));
       renderChecklistViews();
     });
   } else {
-    const saved = localStorage.getItem('tripmap:checklist:' + file);
+    const saved = readRoomStorage('checklist', file);
     currentTrip.checklist = saved ? JSON.parse(saved) : [];
     renderChecklistViews();
   }
@@ -2683,12 +2820,12 @@ function setTrip(file, definition){
       if (file !== currentTripFile) return;
       const remote = snap.val();
       currentTrip.categoryCovers = (remote && typeof remote === 'object') ? remote : {};
-      safeLocalStorageSet('tripmap:covers:' + file, JSON.stringify(currentTrip.categoryCovers));
+      safeLocalStorageSet(roomStorageKey('covers', file), JSON.stringify(currentTrip.categoryCovers));
       renderHome();
       if (activeCategory && el('screen-category').classList.contains('active')) renderCatBanner(activeCategory);
     });
   } else {
-    const savedCovers = localStorage.getItem('tripmap:covers:' + file);
+    const savedCovers = readRoomStorage('covers', file);
     currentTrip.categoryCovers = savedCovers ? JSON.parse(savedCovers) : {};
   }
 
@@ -2697,17 +2834,24 @@ function setTrip(file, definition){
     fbRef.on('value', async snap => {
       if (file !== currentTripFile) return;
       const remote = snap.val();
-      if (Array.isArray(remote)){
-        currentTrip.places = remote;
-      } else if (remote && typeof remote === 'object'){
-        currentTrip.places = Object.values(remote);
+      const legacyPlaceKeys = placesRecordNeedsMigration(remote);
+      if (remote && typeof remote === 'object'){
+        currentTrip.places = placesFromRemote(remote);
       } else {
         currentTrip.places = await loadLocalPlaces(file);
         if (file !== currentTripFile) return; // trip switched while the cache was loading
-        fbRef.set(currentTrip.places);
       }
-      migratePlaces(currentTrip.places);
+      const migrated = migratePlaces(currentTrip.places);
       saveLocalPlaces(file, currentTrip.places);
+      // Firebase historically stored places as one array. Convert it once to
+      // an ID-keyed record so subsequent child writes are independent. Older
+      // TripMap versions already read object values, so this remains backward
+      // readable; an old client can still replace it with an array if rolled back.
+      if ((legacyPlaceKeys || migrated || !remote) && currentTrip.places.length){
+        try {
+          fbRef.set(placesToRecord(currentTrip.places)).catch(reportSyncWriteError);
+        } catch (err) { reportSyncWriteError(err); }
+      }
       renderMarkers();
       renderHome();
       if (activeCategory && el('screen-category').classList.contains('active')) openCategory(activeCategory);
@@ -2766,7 +2910,7 @@ async function boot(){
       const p = currentTrip.places.find(pl => pl.id === wasRepositioning);
       if (p){
         p.lat = c.lat; p.lng = c.lng;
-        saveTrip();
+        savePlace(p);
         renderMarkers();
         renderHome();
         openEditor(p.id);
@@ -2879,15 +3023,30 @@ async function boot(){
     if (e.target === el('coverPhotoSheet')) el('coverPhotoSheet').classList.remove('open');
   });
 
-  el('roomStatus').textContent = fbDb ? getRoom() : 'offline';
-  el('roomItem').addEventListener('click', () => {
+  updateRoomStatus();
+  el('roomItem').addEventListener('click', async () => {
     const current = getRoom();
-    const next = prompt('Sync room code (share this with whoever you want to sync with):', current);
+    const next = prompt('Enter a private room code to join:', current);
     if (!next || next.trim() === current) return;
-    safeLocalStorageSet(ROOM_KEY, next.trim());
-    el('roomStatus').textContent = fbDb ? getRoom() : 'offline';
-    setTrip(currentTripFile, currentTrip);
-    el('menu').classList.remove('open');
+    try {
+      await switchRoom(next.trim());
+      el('menu').classList.remove('open');
+    } catch (err) { alert(err.message); }
+  });
+  el('privateRoomItem').addEventListener('click', async () => {
+    const approved = confirm(`Create a new private room and copy the current ${currentTrip.name} trip into it?`);
+    if (!approved) return;
+    try {
+      const room = await createPrivateRoom();
+      el('menu').classList.remove('open');
+      alert(`Private room created. Its code is:\n\n${room}\n\nUse “Share room invite” to invite someone.`);
+    } catch (err) { alert('Could not create the private room: ' + err.message); }
+  });
+  el('shareRoomItem').addEventListener('click', async () => {
+    try {
+      await shareCurrentRoom();
+      el('menu').classList.remove('open');
+    } catch (err) { alert('Could not share the room invite: ' + err.message); }
   });
 
   el('photoAddBtn').addEventListener('click', () => el('f-photo-file').click());
@@ -3112,7 +3271,15 @@ async function boot(){
   });
 }
 
-boot();
+async function startApp(){
+  await initializeFirebaseIdentity();
+  applyRoomInviteFromLocation();
+  await boot();
+}
+startApp().catch(err => {
+  console.error('TripMap failed to start', err);
+  alert('TripMap could not start. Please reload and try again.');
+});
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
