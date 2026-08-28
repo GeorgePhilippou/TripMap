@@ -27,6 +27,20 @@ const indexHtml = await read('index.html');
 assert.match(indexHtml, /<script src="src\/tripmap-core\.js"><\/script>/, 'index.html must load the tested core utilities');
 assert.match(indexHtml, /firebase-auth-compat\.js/, 'index.html must load Firebase Authentication before starting sync');
 assert.match(indexHtml, /LOCAL_OFFLINE_MODE/, 'index.html must retain a localhost-only, side-effect-free smoke-test mode');
+const categorySource = indexHtml.match(/const CATEGORIES = \[([\s\S]*?)\n\];/);
+assert.ok(categorySource, 'index.html must define CATEGORIES');
+const categoryKeys = [...categorySource[1].matchAll(/key:'([a-z]+)'/g)].map(match => match[1]);
+const expectedCategoryKeys = [
+  'sight', 'food', 'beach', 'historical', 'fruit', 'shops', 'activity', 'stays', 'airport', 'general', 'hike',
+  'zorbas', 'cafe', 'restaurants', 'nature', 'nightlife', 'essentials', 'transport',
+];
+assert.deepEqual(categoryKeys, expectedCategoryKeys, 'category keys or their intended order changed unexpectedly');
+assert.equal(new Set(categoryKeys).size, categoryKeys.length, 'category keys must be unique');
+for (const key of categoryKeys) {
+  assert.match(indexHtml, new RegExp(`--${key}:[^;]+;`), `${key} must define a primary colour`);
+  assert.match(indexHtml, new RegExp(`--${key}-soft:[^;]+;`), `${key} must define a soft colour`);
+}
+assert.equal((categorySource[1].match(/icon:svgIcon\(/g) || []).length, categoryKeys.length, 'every category must use the unified SVG icon system');
 const inlineScripts = [...indexHtml.matchAll(/<script>([\s\S]*?)<\/script>/g)];
 assert.ok(inlineScripts.length > 0, 'index.html must contain its application script');
 for (const [, source] of inlineScripts) new vm.Script(source, { filename: 'index.html:inline-script' });
