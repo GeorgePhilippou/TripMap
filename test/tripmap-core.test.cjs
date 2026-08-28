@@ -46,6 +46,16 @@ test('prefers embedded Google place coordinates over a misleading viewport', () 
   });
 });
 
+test('recovers a Google Maps destination from a bot-check continuation', () => {
+  const destination = 'https://www.google.com/maps/place/Darna+Restaurant/@42.426382,-71.070379,17z/data=!4m6!3m5!1sabc!8m2!3d42.4263781!4d-71.0677987';
+  const gate = 'https://www.google.com/sorry/index?continue=' + encodeURIComponent(destination) + '&q=challenge';
+  assert.deepEqual(parseLocationInput(gate), {
+    lat: 42.4263781,
+    lng: -71.0677987,
+    name: 'Darna Restaurant',
+  });
+});
+
 test('parses the full destination returned by an Apple Maps short link', () => {
   const parsed = parseLocationInput("https://maps.apple.com/place?address=Dimokratias%20Avenue%2032,%208028%20Paphos,%20Cyprus&coordinate=34.776722,32.443865&name=McDonald's&place-id=I39053CB4E3DAB236&map=h");
   assert.deepEqual(parsed, { lat: 34.776722, lng: 32.443865, name: "McDonald's" });

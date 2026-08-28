@@ -171,6 +171,22 @@
         return { query: text };
       }
 
+      // Google may send server-side redirect resolvers through a bot-check or
+      // consent page. Those gate URLs retain the real Maps destination in a
+      // `continue` parameter, so recover it instead of treating the gate as
+      // another unreadable shortened link.
+      const continuedUrl = parsedUrl.searchParams.get('continue');
+      if (continuedUrl && parsedUrl.hostname.includes('google.')) {
+        try {
+          const continued = new URL(continuedUrl);
+          const continuedIsGoogleMaps = (continued.hostname.includes('google.') && continued.pathname.includes('/maps'))
+            || continued.hostname.startsWith('maps.google.');
+          if (continuedIsGoogleMaps) return parseLocationInput(continued.toString());
+        } catch (error) {
+          // Ignore malformed or non-Maps continuation URLs.
+        }
+      }
+
       if (parsedUrl.hostname.includes('maps.apple.com')) {
         const coordinates = parsedUrl.searchParams.get('ll') || parsedUrl.searchParams.get('coordinate');
         const name = parsedUrl.searchParams.get('q') || parsedUrl.searchParams.get('name') || '';
