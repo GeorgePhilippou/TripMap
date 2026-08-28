@@ -151,6 +151,67 @@
     return (raw || '').replace(/[\r\n]+/g, ', ').replace(/\s{2,}/g, ' ').trim();
   }
 
+  function coordinatesFromGoogleFeatureId(rawFeatureId) {
+    const match = /^0x([0-9a-f]+):0x[0-9a-f]+$/i.exec(rawFeatureId || '');
+    if (!match || typeof BigInt !== 'function') return null;
+
+    let bits;
+    try {
+      bits = BigInt(`0x${match[1]}`).toString(2).padStart(64, '0');
+    } catch (error) {
+      return null;
+    }
+    if (bits.length !== 64) return null;
+
+    // The first half of a Google ftid is an S2 cell ID. Decode its face and
+    // Hilbert-curve position, then convert the cell centre back to latitude
+    // and longitude. Google commonly supplies a leaf cell, whose centre is
+    // accurate enough to place the imported pin within a few metres.
+    const face = parseInt(bits.slice(0, 3), 2);
+    const markerIndex = bits.lastIndexOf('1');
+    const positionBits = bits.slice(3, markerIndex);
+    if (face > 5 || markerIndex < 3 || positionBits.length % 2 !== 0) return null;
+
+    const position = [];
+    for (let i = 0; i < positionBits.length; i += 2) {
+      position.push(parseInt(positionBits.slice(i, i + 2), 2));
+    }
+
+    const point = { x: 0, y: 0 };
+    for (let i = position.length - 1, level = 1; i >= 0; i -= 1, level += 1) {
+      const quadrant = position[i];
+      const rx = quadrant === 2 || quadrant === 3 ? 1 : 0;
+      const ry = quadrant === 1 || quadrant === 2 ? 1 : 0;
+      const size = 2 ** (level - 1);
+      if (ry === 0) {
+        if (rx === 1) {
+          point.x = size - 1 - point.x;
+          point.y = size - 1 - point.y;
+        }
+        [point.x, point.y] = [point.y, point.x];
+      }
+      point.x += size * rx;
+      point.y += size * ry;
+    }
+    if (face % 2 === 1) [point.x, point.y] = [point.y, point.x];
+
+    const scale = 2 ** position.length;
+    const stToUv = value => value >= 0.5
+      ? (4 * value * value - 1) / 3
+      : (1 - 4 * (1 - value) * (1 - value)) / 3;
+    const u = stToUv((point.x + 0.5) / scale);
+    const v = stToUv((point.y + 0.5) / scale);
+    const xyzByFace = [
+      [1, u, v], [-u, 1, v], [-u, -v, 1],
+      [-1, -v, -u], [v, -1, -u], [v, u, -1],
+    ];
+    const [x, y, z] = xyzByFace[face];
+    return {
+      lat: Math.atan2(z, Math.sqrt(x * x + y * y)) * 180 / Math.PI,
+      lng: Math.atan2(y, x) * 180 / Math.PI,
+    };
+  }
+
   function parseLocationInput(raw) {
     const text = (raw || '').trim();
     if (!text) return null;
@@ -205,6 +266,7 @@
         const placeMatch = parsedUrl.pathname.match(/\/place\/([^/@]+)/);
         if (placeMatch) name = decodeURIComponent(placeMatch[1].replace(/\+/g, ' '));
         const query = parsedUrl.searchParams.get('q') || parsedUrl.searchParams.get('query');
+        if (!name && query) name = query.split(',')[0].trim();
         const queryIsCoordinates = query && /^-?\d+\.\d+,-?\d+\.\d+$/.test(query);
         if (queryIsCoordinates) {
           const [lat, lng] = query.split(',').map(parseFloat);
@@ -222,6 +284,8 @@
         if (alternatePlaceCoordinates) {
           return { lat: parseFloat(alternatePlaceCoordinates[2]), lng: parseFloat(alternatePlaceCoordinates[1]), name };
         }
+        const featureCoordinates = coordinatesFromGoogleFeatureId(parsedUrl.searchParams.get('ftid'));
+        if (featureCoordinates) return { ...featureCoordinates, name };
         const atMatch = parsedUrl.href.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
         if (atMatch) return { lat: parseFloat(atMatch[1]), lng: parseFloat(atMatch[2]), name };
         const fallback = name || (query ? decodeURIComponent(query.replace(/\+/g, ' ')) : '');

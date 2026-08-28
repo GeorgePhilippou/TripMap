@@ -216,8 +216,15 @@
   .search-wrap{ position:absolute; top:calc(60px + env(safe-area-inset-top)); left:14px; right:14px; z-index:500; }
   .search-wrap input{
     width:100%; background:var(--overlay); backdrop-filter:blur(6px); color:var(--text);
-    border:1px solid var(--border); border-radius:10px; padding:10px 12px; font-size:13px; font-family:inherit;
+    border:1px solid var(--border); border-radius:10px; padding:10px 42px 10px 12px; font-size:13px; font-family:inherit;
   }
+  .search-clear-btn{
+    position:absolute; top:5px; right:6px; width:29px; height:29px; z-index:2;
+    display:flex; align-items:center; justify-content:center; border:0; border-radius:50%;
+    background:transparent; color:var(--muted); font-size:20px; line-height:1; cursor:pointer;
+  }
+  .search-clear-btn:active{ background:var(--surface2); }
+  #search:placeholder-shown + .search-clear-btn{ display:none; }
   .search-results{
     margin-top:6px; background:var(--overlay); backdrop-filter:blur(6px); border:1px solid var(--border);
     border-radius:10px; overflow:hidden; display:none; max-height:240px; overflow-y:auto;
@@ -637,6 +644,7 @@
       </div>
       <div class="search-wrap">
         <input id="search" type="text" placeholder="Search, or paste a Maps link…" autocomplete="off">
+        <button type="button" id="searchClearBtn" class="search-clear-btn" aria-label="Clear search">&times;</button>
         <div id="searchResults" class="search-results"></div>
       </div>
       <div id="pinCrosshair" class="pin-crosshair"><div class="pin-crosshair-icon"></div></div>
@@ -829,7 +837,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script src="src/tripmap-core.js"></script>
 <script>
-const APP_VERSION = '1.34.2';
+const APP_VERSION = '1.34.3';
 
 const {
   boundsSpanReasonable,
@@ -3209,6 +3217,13 @@ async function boot(){
     clearTimeout(searchDebounceTimer);
     const q = e.target.value.trim();
     searchDebounceTimer = setTimeout(() => runSearch(q), 350);
+  });
+  el('searchClearBtn').addEventListener('click', () => {
+    clearTimeout(searchDebounceTimer);
+    lastSearchQuery = '';
+    el('search').value = '';
+    clearSearchResults();
+    el('search').focus();
   });
   el('search').addEventListener('paste', e => {
     // A single-line <input> silently deletes line breaks the instant pasted

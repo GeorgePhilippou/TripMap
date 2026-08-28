@@ -56,6 +56,13 @@ test('recovers a Google Maps destination from a bot-check continuation', () => {
   });
 });
 
+test('decodes coordinates from the feature ID in a Google share destination', () => {
+  const parsed = parseLocationInput('https://www.google.com/maps?q=Zorbas+Bakery+(%CE%A6%CE%BF%CF%8D%CF%81%CE%BD%CE%BF%CF%82+%CE%96%CE%9F%CE%A1%CE%A0%CE%91%CE%A3),+Apostolou+Pavlou+Ave,+Kato,+Pafos+8041,+Cyprus&ftid=0x14e706dd2eaaa003:0x103ada71f1d47e6e&entry=gps');
+  assert.equal(parsed.name, 'Zorbas Bakery (\u03a6\u03bf\u03cd\u03c1\u03bd\u03bf\u03c2 \u0396\u039f\u03a1\u03a0\u0391\u03a3)');
+  assert.ok(Math.abs(parsed.lat - 34.76017742337895) < 1e-10);
+  assert.ok(Math.abs(parsed.lng - 32.412393123039294) < 1e-10);
+});
+
 test('parses the full destination returned by an Apple Maps short link', () => {
   const parsed = parseLocationInput("https://maps.apple.com/place?address=Dimokratias%20Avenue%2032,%208028%20Paphos,%20Cyprus&coordinate=34.776722,32.443865&name=McDonald's&place-id=I39053CB4E3DAB236&map=h");
   assert.deepEqual(parsed, { lat: 34.776722, lng: 32.443865, name: "McDonald's" });
