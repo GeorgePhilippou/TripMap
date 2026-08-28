@@ -2806,9 +2806,37 @@ function setTrip(file, definition){
   };
   categoryOrder = loadCategoryOrder(file);
   resetMapView();
+
+  // Firebase's listeners below only fire once a network response comes back,
+  // so on a cold start with no connectivity (e.g. mid-flight) the trip would
+  // otherwise render empty until reconnecting. Seed from the last-synced
+  // local cache first so there's something to see immediately; the Firebase
+  // listeners still take over and overwrite it the moment real data arrives.
+  let placesAnsweredByRemote = false;
+  if (fbDb){
+    const cachedDates = loadLocalDates(file);
+    currentTrip.startDate = cachedDates.start;
+    currentTrip.endDate = cachedDates.end;
+    const cachedFlights = readRoomStorage('flights', file);
+    currentTrip.flights = cachedFlights ? JSON.parse(cachedFlights) : [];
+    const cachedChecklist = readRoomStorage('checklist', file);
+    currentTrip.checklist = cachedChecklist ? JSON.parse(cachedChecklist) : [];
+    const cachedCovers = readRoomStorage('covers', file);
+    currentTrip.categoryCovers = cachedCovers ? JSON.parse(cachedCovers) : {};
+    loadLocalPlaces(file).then(places => {
+      if (file !== currentTripFile || placesAnsweredByRemote) return;
+      currentTrip.places = places;
+      migratePlaces(currentTrip.places);
+      renderMarkers();
+      renderHome();
+      if (activeCategory && el('screen-category').classList.contains('active')) openCategory(activeCategory);
+    });
+  }
+
   renderMapLegend();
   renderMarkers();
   renderHome();
+  renderChecklistViews();
   fetchWeather();
 
   if (fbDb){
@@ -2882,6 +2910,7 @@ function setTrip(file, definition){
     fbRef = fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(file) + '/places');
     fbRef.on('value', async snap => {
       if (file !== currentTripFile) return;
+      placesAnsweredByRemote = true;
       const remote = snap.val();
       const legacyPlaceKeys = placesRecordNeedsMigration(remote);
       if (remote && typeof remote === 'object'){
