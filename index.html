@@ -357,15 +357,16 @@
   .pin-photo{
     width:34px; height:34px; border-radius:50%; position:relative; margin:0 1px;
     border:2px solid var(--pin-ring); box-shadow:0 1px 3px rgba(0,0,0,.5);
-    background:var(--surface); overflow:hidden;
-    /* Leaflet GPU-shifts every marker with a 3D transform for smooth panning,
-       and Safari is known to sometimes stop clipping a border-radius +
-       overflow:hidden element once an ancestor gets one of those - the
-       image then spills past the circle as a stray sliver. clip-path isn't
-       affected by that bug, so it's kept as a second, independent clip. */
-    clip-path:circle(50%);
+    background-color:var(--surface); background-size:cover; background-position:center;
+    overflow:hidden; clip-path:circle(50%);
+    /* Leaflet GPU-shifts every marker with a 3D transform for smooth panning.
+       An <img> nested inside that transformed ancestor is a known trouble
+       spot in Safari - it can rasterise only part of the image regardless of
+       clipping, since it's a paint bug, not a clip bug. A CSS background-image
+       is composited as part of this element's own paint instead of as a
+       separate replaced-element layer, which sidesteps that class of bug
+       entirely - so the photo is painted this way rather than via <img>. */
   }
-  .pin-photo img{ width:100%; height:100%; object-fit:cover; display:block; }
   .pin-photo-tail{
     position:absolute; left:50%; bottom:-7px; transform:translateX(-50%);
     width:0; height:0; border-left:5px solid transparent; border-right:5px solid transparent;
@@ -879,7 +880,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script src="src/tripmap-core.js"></script>
 <script>
-const APP_VERSION = '1.40.2';
+const APP_VERSION = '1.41.0';
 
 const {
   boundsSpanReasonable,
@@ -2134,15 +2135,9 @@ function pinIcon(cat, photo, name){
     // with no photo yet, so a bare pin still reads as "add a photo here".
     return L.divIcon({
       className: 'leaflet-div-icon',
-      // No loading="lazy" here: it's already a zero-cost, already-decoded
-      // data URI, and lazy-load's visibility detection is unreliable on
-      // elements inside a heavily-transformed ancestor - every Leaflet
-      // marker is GPU-positioned via translate3d, which is exactly that.
-      // decoding="sync" forces the browser to fully decode before it ever
-      // paints this element, rather than risk painting whatever's decoded
-      // so far for a large source photo - the default "auto" is allowed to
-      // do exactly that.
-      html: `<div class="pin-wrap"><div class="pin-photo" style="--pin-ring:${color}"><img src="${photo}" decoding="sync"><div class="pin-photo-tail"></div></div>${label}</div>`,
+      // The photo is a background-image, not an <img> - see the comment on
+      // .pin-photo for why.
+      html: `<div class="pin-wrap"><div class="pin-photo" style="--pin-ring:${color};background-image:url('${photo}')"><div class="pin-photo-tail"></div></div>${label}</div>`,
       iconSize: [112, 70],
       iconAnchor: [56, 44]
     });
