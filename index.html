@@ -861,7 +861,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script src="src/tripmap-core.js"></script>
 <script>
-const APP_VERSION = '1.38.0';
+const APP_VERSION = '1.39.0';
 
 const {
   boundsSpanReasonable,
@@ -2159,7 +2159,7 @@ function renderMarkers(){
   currentTrip.places.filter(p => !mapCategoryFilter || p.category === mapCategoryFilter).forEach(p => {
     const photo = p.photos && p.photos[0];
     const m = L.marker([p.lat, p.lng], { icon: pinIcon(p.category, photo) });
-    const thumb = photo ? `<img src="${photo}" style="width:100%;max-width:180px;height:90px;object-fit:cover;border-radius:8px;margin-bottom:6px;display:block;">` : '';
+    const thumb = photo ? `<img src="${photo}" onclick="window.openPlacePhotos('${p.id}')" style="width:100%;max-width:180px;height:90px;object-fit:cover;border-radius:8px;margin-bottom:6px;display:block;cursor:pointer;">` : '';
     const cat = catByKey(p.category);
     m.bindPopup(`
       <div class="map-popup">
@@ -2836,12 +2836,26 @@ function deleteFlight(){
   renderHome();
   closeFlightEditor();
 }
+function openPhotoViewer(photos, startIndex){
+  if (!photos || !photos.length) return;
+  new PhotoSwipe({
+    dataSource: photos.map(src => ({ src })),
+    index: startIndex || 0,
+    bgOpacity: 0.9,
+  }).init();
+}
+function openPlacePhotos(id){
+  const p = currentTrip.places.find(pl => pl.id === id);
+  if (p) openPhotoViewer(p.photos, 0);
+}
+let photoGallerySortable = null;
 function updatePhotoPreview(){
   const gallery = el('photoGallery');
   gallery.innerHTML = '';
   pendingPhotos.forEach((photo, i) => {
     const item = document.createElement('div');
     item.className = 'photo-gallery-item';
+    item.dataset.index = i;
     item.innerHTML = `<a href="${photo}" class="photo-gallery-link"><img src="${photo}"></a><button type="button" class="photo-gallery-remove">&#10005;</button>`;
     item.querySelector('.photo-gallery-remove').addEventListener('click', e => {
       e.preventDefault();
@@ -2850,6 +2864,22 @@ function updatePhotoPreview(){
     });
     gallery.appendChild(item);
   });
+  if (photoGallerySortable){ photoGallerySortable.destroy(); photoGallerySortable = null; }
+  if (pendingPhotos.length > 1){
+    // A plain tap must still open the lightbox and a plain tap on the ×
+    // must still remove the photo, so dragging only kicks in after a short
+    // hold (touch) and never starts from the remove button at all.
+    photoGallerySortable = Sortable.create(gallery, {
+      animation: 150,
+      delay: 150,
+      delayOnTouchOnly: true,
+      filter: '.photo-gallery-remove',
+      onEnd: () => {
+        pendingPhotos = Array.from(gallery.children).map(el => pendingPhotos[Number(el.dataset.index)]);
+        updatePhotoPreview();
+      }
+    });
+  }
 }
 function openEditor(id, latlng){
   editingId = id;
