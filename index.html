@@ -326,6 +326,11 @@
     position:absolute; top:4px; right:4px; width:22px; height:22px; border-radius:50%;
     background:rgba(0,0,0,.6); color:#fff; border:none; cursor:pointer; font-size:11px;
   }
+  .pswp-place-title{
+    position:absolute; left:16px; right:60px; top:calc(6px + env(safe-area-inset-top));
+    color:#fff; font-size:15px; font-weight:600; text-shadow:0 1px 4px rgba(0,0,0,.6);
+    pointer-events:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
 
   /* ---- trip menu ---- */
   #menu{ position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; align-items:flex-start; justify-content:center; z-index:1000; }
@@ -861,7 +866,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script src="src/tripmap-core.js"></script>
 <script>
-const APP_VERSION = '1.39.0';
+const APP_VERSION = '1.39.1';
 
 const {
   boundsSpanReasonable,
@@ -2836,17 +2841,45 @@ function deleteFlight(){
   renderHome();
   closeFlightEditor();
 }
-function openPhotoViewer(photos, startIndex){
+function loadImageSize(src){
+  // The editor's own gallery lightbox (PhotoSwipeLightbox) reads width/height
+  // straight off the visible <img> thumbnail it's bound to, so it never
+  // needs this. This viewer opens with no DOM thumbnail behind it at all
+  // (straight off a map pin tap), so PhotoSwipe has no way to know each
+  // photo's real aspect ratio up front - without it, it guesses and the
+  // image opens stretched. These are already-decoded data URIs, so loading
+  // one to read its natural size is effectively instant, no network wait.
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => resolve({ width: img.naturalWidth || 1600, height: img.naturalHeight || 1200 });
+    img.onerror = () => resolve({ width: 1600, height: 1200 });
+    img.src = src;
+  });
+}
+async function openPhotoViewer(photos, startIndex, title){
   if (!photos || !photos.length) return;
-  new PhotoSwipe({
-    dataSource: photos.map(src => ({ src })),
+  const dataSource = await Promise.all(photos.map(async src => ({ src, ...(await loadImageSize(src)) })));
+  const pswp = new PhotoSwipe({
+    dataSource,
     index: startIndex || 0,
     bgOpacity: 0.9,
-  }).init();
+  });
+  if (title){
+    pswp.on('uiRegister', () => {
+      pswp.ui.registerElement({
+        name: 'place-title',
+        order: 9,
+        isButton: false,
+        appendTo: 'root',
+        onInit: el => { el.className = 'pswp-place-title'; el.textContent = title; }
+      });
+    });
+  }
+  pswp.init();
 }
 function openPlacePhotos(id){
   const p = currentTrip.places.find(pl => pl.id === id);
-  if (p) openPhotoViewer(p.photos, 0);
+  if (p) openPhotoViewer(p.photos, 0, p.name);
 }
 let photoGallerySortable = null;
 function updatePhotoPreview(){
