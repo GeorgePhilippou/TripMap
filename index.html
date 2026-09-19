@@ -346,6 +346,17 @@
     display:flex; align-items:center; justify-content:center; }
   .pin-icon{ transform:rotate(45deg); color:var(--accent-ink); display:flex; }
   .pin-icon svg{ width:14px; height:14px; }
+  .pin-photo{
+    width:34px; height:34px; border-radius:50%; position:relative; margin:0 1px;
+    border:2.5px solid var(--pin-ring); box-shadow:0 1px 3px rgba(0,0,0,.5);
+    background:var(--surface);
+  }
+  .pin-photo img{ width:100%; height:100%; border-radius:50%; object-fit:cover; display:block; }
+  .pin-photo-tail{
+    position:absolute; left:50%; bottom:-7px; transform:translateX(-50%);
+    width:0; height:0; border-left:5px solid transparent; border-right:5px solid transparent;
+    border-top:7px solid var(--pin-ring);
+  }
   input[type=file]{ display:none; }
 
   /* ---- map marker popup ---- */
@@ -847,7 +858,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script src="src/tripmap-core.js"></script>
 <script>
-const APP_VERSION = '1.36.0';
+const APP_VERSION = '1.37.0';
 
 const {
   boundsSpanReasonable,
@@ -2009,8 +2020,19 @@ async function runSearch(query){
   lastSearchResults = results;
   renderSearchResults(lastOwnMatches, results);
 }
-function pinIcon(cat){
+function pinIcon(cat, photo){
   const color = categoryColor(cat);
+  if (photo){
+    // A thumbnail makes a place recognisable while scanning the map without
+    // tapping every pin - the plain teardrop stays the fallback for places
+    // with no photo yet, so a bare pin still reads as "add a photo here".
+    return L.divIcon({
+      className: 'leaflet-div-icon',
+      html: `<div class="pin-photo" style="--pin-ring:${color}"><img src="${photo}" loading="lazy"><div class="pin-photo-tail"></div></div>`,
+      iconSize: [36, 44],
+      iconAnchor: [18, 44]
+    });
+  }
   const catObj = CAT_BY_KEY[cat];
   const iconSvg = catObj ? catObj.icon : '';
   return L.divIcon({
@@ -2065,8 +2087,9 @@ function renderMarkers(){
   markerClusterGroup.clearLayers();
   markers = {};
   currentTrip.places.filter(p => !mapCategoryFilter || p.category === mapCategoryFilter).forEach(p => {
-    const m = L.marker([p.lat, p.lng], { icon: pinIcon(p.category) });
-    const thumb = p.photos && p.photos[0] ? `<img src="${p.photos[0]}" style="width:100%;max-width:180px;height:90px;object-fit:cover;border-radius:8px;margin-bottom:6px;display:block;">` : '';
+    const photo = p.photos && p.photos[0];
+    const m = L.marker([p.lat, p.lng], { icon: pinIcon(p.category, photo) });
+    const thumb = photo ? `<img src="${photo}" style="width:100%;max-width:180px;height:90px;object-fit:cover;border-radius:8px;margin-bottom:6px;display:block;">` : '';
     const cat = CAT_BY_KEY[p.category];
     m.bindPopup(`
       <div class="map-popup">
