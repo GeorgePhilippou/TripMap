@@ -353,16 +353,29 @@
     display:flex; align-items:center; justify-content:center; }
   .pin-icon{ transform:rotate(45deg); color:var(--accent-ink); display:flex; }
   .pin-icon svg{ width:14px; height:14px; }
+  .pin-wrap{ display:flex; flex-direction:column; align-items:center; }
   .pin-photo{
     width:34px; height:34px; border-radius:50%; position:relative; margin:0 1px;
-    border:2.5px solid var(--pin-ring); box-shadow:0 1px 3px rgba(0,0,0,.5);
+    border:2px solid var(--pin-ring); box-shadow:0 1px 3px rgba(0,0,0,.5);
     background:var(--surface); overflow:hidden;
+    /* Leaflet GPU-shifts every marker with a 3D transform for smooth panning,
+       and Safari is known to sometimes stop clipping a border-radius +
+       overflow:hidden element once an ancestor gets one of those - the
+       image then spills past the circle as a stray sliver. clip-path isn't
+       affected by that bug, so it's kept as a second, independent clip. */
+    clip-path:circle(50%);
   }
-  .pin-photo img{ width:100%; height:100%; border-radius:50%; object-fit:cover; display:block; }
+  .pin-photo img{ width:100%; height:100%; object-fit:cover; display:block; }
   .pin-photo-tail{
     position:absolute; left:50%; bottom:-7px; transform:translateX(-50%);
     width:0; height:0; border-left:5px solid transparent; border-right:5px solid transparent;
     border-top:7px solid var(--pin-ring);
+  }
+  .pin-label{
+    margin-top:9px; max-width:96px; padding:2px 6px; border-radius:6px;
+    background:rgba(0,0,0,.68); color:#fff; font-size:10px; font-weight:600;
+    line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    box-shadow:0 1px 3px rgba(0,0,0,.3);
   }
   input[type=file]{ display:none; }
 
@@ -866,7 +879,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script src="src/tripmap-core.js"></script>
 <script>
-const APP_VERSION = '1.39.2';
+const APP_VERSION = '1.40.0';
 
 const {
   boundsSpanReasonable,
@@ -1471,26 +1484,43 @@ function removePlace(placeId){
   cacheCurrentPlaces();
   if (fbRef) trackedWrite(fbRef.child(placeId).remove()).catch(() => {});
 }
-function resizeImageFile(file, maxDim, quality){
+function loadImageSource(file){
+  // A phone photo is commonly stored in the camera sensor's native
+  // orientation plus an EXIF tag saying how to rotate it for display.
+  // Drawing it to a canvas with a plain Image element ignores that tag
+  // entirely, so a portrait photo can get silently saved sideways.
+  // createImageBitmap's imageOrientation option applies that rotation
+  // during decode; fall back to the old, orientation-blind path only if
+  // the browser doesn't support it at all.
+  if (window.createImageBitmap){
+    return createImageBitmap(file, { imageOrientation: 'from-image' }).catch(() => loadImageElement(file));
+  }
+  return loadImageElement(file);
+}
+function loadImageElement(file){
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       const img = new Image();
-      img.onload = () => {
-        let { width, height } = img;
-        if (width > height && width > maxDim){ height = Math.round(height * maxDim / width); width = maxDim; }
-        else if (height > maxDim){ width = Math.round(width * maxDim / height); height = maxDim; }
-        const canvas = document.createElement('canvas');
-        canvas.width = width; canvas.height = height;
-        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', quality));
-      };
+      img.onload = () => resolve(img);
       img.onerror = reject;
       img.src = reader.result;
     };
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+async function resizeImageFile(file, maxDim, quality){
+  const source = await loadImageSource(file);
+  let width = source.width || source.naturalWidth;
+  let height = source.height || source.naturalHeight;
+  if (width > height && width > maxDim){ height = Math.round(height * maxDim / width); width = maxDim; }
+  else if (height > maxDim){ width = Math.round(width * maxDim / height); height = maxDim; }
+  const canvas = document.createElement('canvas');
+  canvas.width = width; canvas.height = height;
+  canvas.getContext('2d').drawImage(source, 0, 0, width, height);
+  if (source.close) source.close();
+  return canvas.toDataURL('image/jpeg', quality);
 }
 
 function showScreen(id){
@@ -2095,26 +2125,27 @@ async function runSearch(query){
   lastSearchResults = results;
   renderSearchResults(lastOwnMatches, results);
 }
-function pinIcon(cat, photo){
+function pinIcon(cat, photo, name){
   const color = categoryColor(cat);
+  const label = name ? `<div class="pin-label">${escapeHtml(name)}</div>` : '';
   if (photo){
     // A thumbnail makes a place recognisable while scanning the map without
     // tapping every pin - the plain teardrop stays the fallback for places
     // with no photo yet, so a bare pin still reads as "add a photo here".
     return L.divIcon({
       className: 'leaflet-div-icon',
-      html: `<div class="pin-photo" style="--pin-ring:${color}"><img src="${photo}" loading="lazy"><div class="pin-photo-tail"></div></div>`,
-      iconSize: [36, 44],
-      iconAnchor: [18, 44]
+      html: `<div class="pin-wrap"><div class="pin-photo" style="--pin-ring:${color}"><img src="${photo}" loading="lazy"><div class="pin-photo-tail"></div></div>${label}</div>`,
+      iconSize: [112, 70],
+      iconAnchor: [56, 44]
     });
   }
   const catObj = catByKey(cat);
   const iconSvg = catObj ? catObj.icon : '';
   return L.divIcon({
     className: 'leaflet-div-icon',
-    html: `<div class="pin" style="background:${color}"><div class="pin-icon">${iconSvg}</div></div>`,
-    iconSize: [28, 28],
-    iconAnchor: [14, 26]
+    html: `<div class="pin-wrap"><div class="pin" style="background:${color}"><div class="pin-icon">${iconSvg}</div></div>${label}</div>`,
+    iconSize: [112, 63],
+    iconAnchor: [56, 26]
   });
 }
 function renderMapLegend(){
@@ -2163,7 +2194,7 @@ function renderMarkers(){
   markers = {};
   currentTrip.places.filter(p => !mapCategoryFilter || p.category === mapCategoryFilter).forEach(p => {
     const photo = p.photos && p.photos[0];
-    const m = L.marker([p.lat, p.lng], { icon: pinIcon(p.category, photo) });
+    const m = L.marker([p.lat, p.lng], { icon: pinIcon(p.category, photo, p.name) });
     const thumb = photo ? `<img src="${photo}" onclick="window.openPlacePhotos('${p.id}')" style="width:100%;max-width:180px;height:90px;object-fit:cover;border-radius:8px;margin-bottom:6px;display:block;cursor:pointer;">` : '';
     const cat = catByKey(p.category);
     m.bindPopup(`
