@@ -82,7 +82,8 @@
   }
 
   /* ---- top bar (shared) ---- */
-  .topbar{ display:flex; align-items:center; justify-content:flex-end; padding:calc(10px + env(safe-area-inset-top)) 18px 0; flex-shrink:0; }
+  .topbar{ display:flex; align-items:center; justify-content:flex-end; gap:10px; padding:calc(10px + env(safe-area-inset-top)) 18px 0; flex-shrink:0; }
+  .version-tag{ font-size:11px; color:var(--muted); opacity:.6; }
   .icon-btn{
     background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:10px;
     width:34px; height:34px; font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center;
@@ -539,6 +540,7 @@
   <!-- HOME -->
   <section id="screen-home" class="screen active">
     <div class="topbar">
+      <span class="version-tag" id="versionTag"></span>
       <button class="icon-btn" id="menuBtn">&#8942;</button>
     </div>
     <div class="home-header">
@@ -845,7 +847,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script src="src/tripmap-core.js"></script>
 <script>
-const APP_VERSION = '1.35.0';
+const APP_VERSION = '1.36.0';
 
 const {
   boundsSpanReasonable,
@@ -2965,6 +2967,7 @@ function populateTripSelect(files, activeFile){
 
 async function boot(){
   el('menuFooter').innerHTML = `Trip Map v${APP_VERSION}<br>Designed by George Philippou &middot; Made with AI`;
+  el('versionTag').textContent = `v${APP_VERSION}`;
   renderMapLegend();
   initMap();
   initHeroMap();
