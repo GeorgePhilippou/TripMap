@@ -31,8 +31,8 @@ const categorySource = indexHtml.match(/const CATEGORIES = \[([\s\S]*?)\n\];/);
 assert.ok(categorySource, 'index.html must define CATEGORIES');
 const categoryKeys = [...categorySource[1].matchAll(/key:'([a-z]+)'/g)].map(match => match[1]);
 const expectedCategoryKeys = [
-  'sight', 'food', 'beach', 'historical', 'fruit', 'shops', 'activity', 'stays', 'airport', 'general', 'hike',
-  'zorbas', 'coffeeshop', 'cafe', 'restaurants', 'nature', 'nightlife', 'essentials', 'transport',
+  'sight', 'food', 'beach', 'historical', 'museums', 'fruit', 'shops', 'activity', 'stays', 'airport', 'general',
+  'hike', 'zorbas', 'coffeeshop', 'cafe', 'restaurants', 'nature', 'nightlife', 'essentials', 'transport',
 ];
 assert.deepEqual(categoryKeys, expectedCategoryKeys, 'category keys or their intended order changed unexpectedly');
 assert.equal(new Set(categoryKeys).size, categoryKeys.length, 'category keys must be unique');
@@ -48,8 +48,10 @@ for (const [, source] of inlineScripts) new vm.Script(source, { filename: 'index
 new vm.Script(await read('src/tripmap-core.js'), { filename: 'src/tripmap-core.js' });
 new vm.Script(await read('sw.js'), { filename: 'sw.js' });
 
-const workerSource = await read('worker/resolve-maps-link.js');
-await import(`data:text/javascript;base64,${Buffer.from(workerSource).toString('base64')}`);
+for (const workerFile of ['worker/resolve-maps-link.js', 'worker/geocode-search.js']) {
+  const workerSource = await read(workerFile);
+  await import(`data:text/javascript;base64,${Buffer.from(workerSource).toString('base64')}`);
+}
 
 const rules = parsedJson.get('database.rules.json').rules;
 assert.equal(rules['.read'], false, 'database root reads must be denied');

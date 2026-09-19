@@ -4,8 +4,8 @@ TripMap is a mobile-first trip planner for collecting places, building itinerari
 
 ## Current capabilities
 
-- Leaflet maps with marker clustering, street and satellite layers, routing, and location search
-- Places organised into configurable categories, with notes, photos, visited state, and cover images
+- Leaflet maps with marker clustering, street and satellite layers, routing, and location search - a place's own photo renders directly on its map pin
+- Places organised into configurable, per-trip categories (built-in categories can be scoped to specific trips; anyone can add their own custom categories per trip too), with notes, photos, visited state, and cover images
 - Day-by-day itinerary, flights, trip dates, weather, checklist notes, recap, and nearest-place tools
 - Google Maps and Apple Maps link parsing, share-target handling, and bulk paste
 - Anonymous Firebase identity and Realtime Database rooms for live synchronisation
@@ -82,6 +82,19 @@ TripMap tries the configured Worker first. When a mobile share includes a place 
 
 Deployment and wiring are intentionally separate from this repository baseline: committing the Worker does not change production infrastructure.
 
+## Cloudflare Geocode Search Worker
+
+`worker/geocode-search.js` proxies OpenStreetMap Nominatim `/search` requests. Nominatim's usage policy asks for an identifying `User-Agent` and discourages unnecessary repeat queries from many untracked clients - a Worker gives every request that User-Agent and caches results at the edge, instead of every visitor's browser calling the public API directly. It only forwards an allowlisted set of query params (`q`, `format`, `limit` capped at 10, `viewbox`, `bounded`), so it can't become an open proxy for arbitrary Nominatim requests.
+
+To deploy it:
+
+1. Create a module Worker in Cloudflare Workers.
+2. Deploy the contents of `worker/geocode-search.js`.
+3. Test a search (`?q=Eiffel+Tower`) returns Nominatim's JSON, and a request with no `q` returns HTTP 400.
+4. Set `GEOCODE_WORKER_URL` in `index.html` to the deployed HTTPS Worker URL.
+
+Left unset, TripMap calls Nominatim directly, exactly as it always has - deploying and wiring this Worker is optional and, like the Maps-link Worker above, entirely separate from this repository baseline.
+
 ## Firebase security rollout
 
 Authentication and database rules must be rolled out in this order. Applying the rules first will lock the existing client out.
@@ -110,6 +123,8 @@ Firebase references: [anonymous web authentication](https://firebase.google.com/
 ## Data model and current limitations
 
 Shared records live below `rooms/{room}/trips/{trip}`. Places are stored below `places/{placeId}` and normal additions, edits, visited toggles, geocoded locality updates, repositioning, deletion, undo, and bulk imports update only the affected children. Explicit JSON import remains a deliberate full-collection replacement. Legacy arrays are accepted and converted to an ID-keyed record on load.
+
+Custom categories a trip adds beyond the built-in set live at `customCategories` as a full-collection array, synced the same way as `categoryCovers`. Each carries its own literal colour pair (chosen from a small fixed palette) rather than a CSS custom property, since only categories baked into `index.html` have one of those. Deleting a custom category removes it from the picker; places already tagged with it keep that category rather than being reassigned or blocked from deletion.
 
 Local caches are namespaced by room and trip. Existing room-agnostic caches are adopted only by the original legacy room; they are never reused when joining a different room. This prevents cached data from one room being displayed or uploaded into another.
 

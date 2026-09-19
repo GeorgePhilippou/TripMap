@@ -27,6 +27,7 @@
     --food:#8A6A28;       --food-soft:#F0E3BE;
     --beach:#396F6C;      --beach-soft:#D3E6E3;
     --historical:#7D5A3C; --historical-soft:#EAE0D0;
+    --museums:#4E5A96;    --museums-soft:#DEE1F0;
     --fruit:#B25A34;      --fruit-soft:#F5DED0;
     --shops:#8A4F6E;      --shops-soft:#F0DCE8;
     --general:#5C6470;    --general-soft:#E1E3E6;
@@ -198,6 +199,7 @@
   .settings-row{ display:flex; align-items:center; gap:12px; padding:12px 18px; border-bottom:1px solid var(--border); }
   .settings-row .cat-icon{ width:28px; height:28px; font-size:13px; }
   .settings-label{ flex:1; font-size:14px; }
+  .settings-row .cat-rename-btn, .settings-row .cat-delete-btn{ width:28px; height:28px; font-size:13px; flex-shrink:0; }
   .toggle{ width:40px; height:24px; border-radius:12px; background:var(--surface2); border:1px solid var(--border); position:relative; cursor:pointer; flex-shrink:0; }
   .toggle.on{ background:var(--accent); border-color:var(--accent); }
   .toggle-knob{
@@ -346,6 +348,17 @@
     display:flex; align-items:center; justify-content:center; }
   .pin-icon{ transform:rotate(45deg); color:var(--accent-ink); display:flex; }
   .pin-icon svg{ width:14px; height:14px; }
+  .pin-photo{
+    width:34px; height:34px; border-radius:50%; position:relative; margin:0 1px;
+    border:2.5px solid var(--pin-ring); box-shadow:0 1px 3px rgba(0,0,0,.5);
+    background:var(--surface);
+  }
+  .pin-photo img{ width:100%; height:100%; border-radius:50%; object-fit:cover; display:block; }
+  .pin-photo-tail{
+    position:absolute; left:50%; bottom:-7px; transform:translateX(-50%);
+    width:0; height:0; border-left:5px solid transparent; border-right:5px solid transparent;
+    border-top:7px solid var(--pin-ring);
+  }
   input[type=file]{ display:none; }
 
   /* ---- map marker popup ---- */
@@ -671,6 +684,7 @@
     <div class="cat-header">
       <button class="icon-btn" id="catSettingsBackBtn">&#8592;</button>
       <h2>Homepage categories</h2>
+      <button class="icon-btn" id="addCategoryBtn" aria-label="Add category" title="Add category">+</button>
     </div>
     <div class="settings-list" id="catSettingsList"></div>
   </section>
@@ -847,7 +861,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script src="src/tripmap-core.js"></script>
 <script>
-const APP_VERSION = '1.36.0';
+const APP_VERSION = '1.38.0';
 
 const {
   boundsSpanReasonable,
@@ -881,12 +895,18 @@ const FIREBASE_CONFIG = {
 // shared links can fall back to their accompanying place text, but a copied
 // short URL on its own still depends on the less reliable public services.
 const RESOLVE_WORKER_URL = 'https://tripmap-link-resolver.george-philippou.workers.dev/';
+// Set this to a deployed worker/geocode-search.js Worker URL to route place
+// search and geocoding through it instead of calling Nominatim directly from
+// every browser - see worker/geocode-search.js for what that buys you
+// (an identifying User-Agent, and a shared cache for repeat queries). Left
+// blank, TripMap calls Nominatim directly, exactly as it always has.
+const GEOCODE_WORKER_URL = '';
 const DEFAULT_ROOM = 'philippou-megan-8x4q';
 const ROOM_KEY = 'tripmap:room';
 const LOCAL_TRIPS_KEY = 'tripmap:localtrips';
 const LOCAL_OFFLINE_MODE = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(location.hostname)
   && new URLSearchParams(location.search).get('offline') === '1';
-let fbAuth, fbDb, fbRef, fbDatesRef, fbFlightsRef, fbChecklistRef, fbCategoryCoversRef;
+let fbAuth, fbDb, fbRef, fbDatesRef, fbFlightsRef, fbChecklistRef, fbCategoryCoversRef, fbCustomCategoriesRef;
 let firebaseIdentityReady = false;
 try {
   if (!LOCAL_OFFLINE_MODE){
@@ -928,12 +948,29 @@ async function initializeFirebaseIdentity(){
     return false;
   }
 }
+let pendingSyncWrites = 0, syncErrorActive = false;
 function updateRoomStatus(){
   const room = getRoom();
-  el('roomStatus').textContent = !fbDb ? 'offline'
+  el('roomStatus').textContent = pendingSyncWrites > 0 ? 'Syncing…'
+    : syncErrorActive ? 'Sync error'
+    : !fbDb ? 'offline'
     : !firebaseIdentityReady ? 'Legacy sync'
     : room === DEFAULT_ROOM ? 'Legacy room'
     : room.slice(0, 12) + '…';
+}
+// Wraps every Firebase write so the room-status pill can show "Syncing…"
+// while a write is in flight and "Sync error" if one fails, instead of that
+// state being invisible between the edit and the next unrelated re-render.
+// Still rejects (after reporting) so callers that await a write - like
+// createPrivateRoom - keep seeing real failures; fire-and-forget call sites
+// add their own no-op .catch() since they never awaited this before either.
+function trackedWrite(promise){
+  pendingSyncWrites++;
+  updateRoomStatus();
+  return promise
+    .then(() => { syncErrorActive = false; })
+    .catch(err => { reportSyncWriteError(err); throw err; })
+    .finally(() => { pendingSyncWrites--; updateRoomStatus(); });
 }
 function applyRoomInviteFromLocation(){
   const invitedRoom = roomCodeFromHash(location.hash);
@@ -959,7 +996,7 @@ async function createPrivateRoom(){
     checklist: snapshot.checklist || [],
     categoryCovers: snapshot.categoryCovers || {},
   };
-  await fbDb.ref('rooms/' + newRoom + '/trips/' + tripKey(currentTripFile)).set(tripData);
+  await trackedWrite(fbDb.ref('rooms/' + newRoom + '/trips/' + tripKey(currentTripFile)).set(tripData));
   await switchRoom(newRoom);
   return newRoom;
 }
@@ -984,6 +1021,7 @@ const CATEGORIES = [
   { key:'food',        label:'Food & Drink',         icon:svgIcon('<path d="M5 2.5v4a2 2 0 0 0 4 0v-4M7 2.5v15"/><path d="M13 2.5v6a2 2 0 0 0 2 2h1M15 10.5v7"/>') },
   { key:'beach',       label:'Beaches',              icon:svgIcon('<circle cx="5" cy="5" r="2"/><path d="M2.5 12c2-1.4 3.5 1.4 5.5 0s3.5 1.4 5.5 0 3-1 4-1M2.5 16c2-1.4 3.5 1.4 5.5 0s3.5 1.4 5.5 0 3-1 4-1M5 1.5v-1M1.5 5h-1M2.5 2.5l-.8-.8M7.5 2.5l.8-.8"/>') },
   { key:'historical',  label:'Historical',           icon:svgIcon('<path d="m10 2.5-7 4h14l-7-4ZM3 16.5h14M4.5 6.5v8M8 6.5v8M12 6.5v8M15.5 6.5v8M2.5 17.5h15"/>') },
+  { key:'museums',     label:'Museums',              icon:svgIcon('<rect x="3" y="4" width="14" height="12" rx="1.5"/><circle cx="7" cy="8" r="1.3"/><path d="m4.5 14 3.5-4 2.5 3 2-2.5 3 3.5"/>') },
   { key:'fruit',       label:'Fruit',                icon:svgIcon('<path d="M10 7.5c-2.7-2.3-7-1-7 3.2 0 4 2.8 6.8 5.4 6.8.7 0 1.1-.4 1.6-.4s.9.4 1.6.4c2.6 0 5.4-2.8 5.4-6.8 0-3-2.6-5-5.4-3.8"/><path d="M10 7.5V5c0-1.4 1-2.3 2.5-2.3M10.5 4.8c-1.7 0-2.8-.7-3.3-1.8"/>') },
   { key:'shops',       label:'Shops',                icon:svgIcon('<path d="M3 7.5h14l-1.2-4H4.2L3 7.5ZM4 7.5v9.5h12V7.5M7 17v-5h6v5"/><path d="M3 7.5c0 1.4 2.3 1.4 2.3 0 0 1.4 2.4 1.4 2.4 0 0 1.4 2.3 1.4 2.3 0 0 1.4 2.3 1.4 2.3 0 0 1.4 2.4 1.4 2.4 0 0 1.4 2.3 1.4 2.3 0"/>') },
   { key:'activity',    label:'Activity',             icon:svgIcon('<path d="M5 2.5v15"/><path d="M5 3.5h10l-2.7 3L15 9.5H5"/>') },
@@ -1008,15 +1046,42 @@ function categoriesForTrip(file){
   const key = tripKey(file);
   return CATEGORIES.filter(c => !c.trips || c.trips.includes(key));
 }
+const CUSTOM_CATEGORY_ICON = svgIcon('<path d="M3 10.5V4a1 1 0 0 1 1-1h6.5L17 9.5a1.4 1.4 0 0 1 0 2L10.5 18 3 10.5Z"/><circle cx="7" cy="7" r="1.3" fill="currentColor" stroke="none"/>');
+// Built-in categories are coloured through the CSS custom properties in
+// :root; a user-created category has nowhere to register one, so it carries
+// its own literal color/soft pair instead, cycled from this small palette.
+const CUSTOM_CATEGORY_PALETTE = [
+  { color:'#5E6BAE', soft:'#DFE2F0' },
+  { color:'#A34E8C', soft:'#F0DCEA' },
+  { color:'#3E8E82', soft:'#D6ECE8' },
+  { color:'#B2792E', soft:'#F3E4CC' },
+  { color:'#6B8E3E', soft:'#E3EDD5' },
+  { color:'#8E5A3E', soft:'#EEE0D4' },
+];
+function loadCustomCategories(file){
+  const saved = readRoomStorage('customcats', file);
+  return saved ? JSON.parse(saved) : [];
+}
+function saveCustomCategoriesLocal(file, arr){
+  safeLocalStorageSet(roomStorageKey('customcats', file), JSON.stringify(arr));
+}
+function tripCategories(file){
+  return categoriesForTrip(file).concat(loadCustomCategories(file));
+}
+function catByKey(key, file){
+  return CAT_BY_KEY[key] || tripCategories(file || currentTripFile).find(c => c.key === key);
+}
+function catColor(cat){ return (cat && cat.color) || `var(--${cat ? cat.key : 'muted'})`; }
+function catSoftColor(cat){ return (cat && cat.soft) || `var(--${cat ? cat.key : 'muted'}-soft)`; }
 function defaultVisibleCategories(file){
-  return categoriesForTrip(file).filter(c => c.key !== 'hike').map(c => c.key);
+  return tripCategories(file).filter(c => c.key !== 'hike').map(c => c.key);
 }
 
 let map, markers = {}, currentTrip = null, currentTripFile = null, editingId = null, pendingLatLng = null;
 let heroMap, heroMarkersLayer, sideMap, sideMarkersLayer;
 let searchMarkers = [], lastSearchResults = [], lastOwnMatches = [], lastSearchQuery = '', searchDebounceTimer = null;
 let activeCategory = null, pendingPhotos = [];
-let sortByDistance = false, lastDeleted = null, undoTimer = null, repositioningId = null, mapCategoryFilter = null;
+let sortByDistance = false, lastAction = null, undoTimer = null, repositioningId = null, mapCategoryFilter = null;
 let categoryOrder = CATEGORIES.map(c => c.key);
 
 const el = id => document.getElementById(id);
@@ -1041,10 +1106,22 @@ function cssVar(name, fallbackName){
   const root = getComputedStyle(document.documentElement);
   return root.getPropertyValue(name).trim() || root.getPropertyValue(fallbackName).trim();
 }
-const categoryColor = cat => cssVar('--' + cat, '--muted');
+function categoryColor(key){
+  // Leaflet's SVG renderer sets fillColor as a plain attribute, not through
+  // .style, so it needs an actual resolved colour rather than a var()
+  // reference - a custom category's colour is already a literal hex value,
+  // a built-in's needs resolving from its CSS custom property.
+  const cat = catByKey(key);
+  return (cat && cat.color) ? cat.color : cssVar('--' + key, '--muted');
+}
 function directionsUrl(lat, lng){
   const isApple = /iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent) && !window.MSStream;
   return isApple ? `https://maps.apple.com/?daddr=${lat},${lng}` : `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+}
+function nominatimSearchUrl(params){
+  const query = new URLSearchParams(params).toString();
+  return GEOCODE_WORKER_URL ? GEOCODE_WORKER_URL + (GEOCODE_WORKER_URL.includes('?') ? '&' : '?') + query
+    : 'https://nominatim.openstreetmap.org/search?' + query;
 }
 function distanceKm(lat1, lng1, lat2, lng2){
   const R = 6371;
@@ -1171,7 +1248,7 @@ function renderRecapScreen(){
   const total = currentTrip.places.length;
   const visited = currentTrip.places.filter(p => p.visited).length;
   const pct = total ? Math.round(visited / total * 100) : 0;
-  const catCounts = categoriesForTrip(currentTripFile).map(c => {
+  const catCounts = tripCategories(currentTripFile).map(c => {
     const places = currentTrip.places.filter(p => p.category === c.key);
     return { c, total: places.length, visited: places.filter(p => p.visited).length };
   }).filter(x => x.total > 0);
@@ -1189,16 +1266,16 @@ function renderRecapScreen(){
   const rowsHtml = catCounts.map(({ c, total, visited }) => {
     const rowPct = total ? Math.round(visited / total * 100) : 0;
     return `<div class="recap-row">
-      <div class="cat-icon" style="background:var(--${c.key}-soft);color:var(--${c.key})">${c.icon}</div>
+      <div class="cat-icon" style="background:${catSoftColor(c)};color:${catColor(c)}">${c.icon}</div>
       <div class="recap-label">${c.label}</div>
-      <div class="recap-bar-track"><div class="recap-bar-fill" style="width:${rowPct}%;background:var(--${c.key});"></div></div>
+      <div class="recap-bar-track"><div class="recap-bar-fill" style="width:${rowPct}%;background:${catColor(c)};"></div></div>
       <div class="recap-count">${visited}/${total}</div>
     </div>`;
   }).join('');
   el('recapContent').innerHTML = statsHtml + (rowsHtml || `<div style="padding:18px;text-align:center;color:var(--muted);">No places saved yet.</div>`);
 }
 function sharePlace(p){
-  const cat = CAT_BY_KEY[p.category];
+  const cat = catByKey(p.category);
   const text = `${p.name}${cat ? ' (' + cat.label + ')' : ''}${p.notes ? '\n' + p.notes : ''}`;
   const url = `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}`;
   if (navigator.share){
@@ -1282,7 +1359,7 @@ function saveVisibleCategories(file, arr){
   safeLocalStorageSet(roomStorageKey('visible', file), JSON.stringify(arr));
 }
 function loadCategoryOrder(file){
-  const allKeys = categoriesForTrip(file).map(c => c.key);
+  const allKeys = tripCategories(file).map(c => c.key);
   const saved = readRoomStorage('order', file);
   const order = saved ? JSON.parse(saved) : allKeys.slice();
   // Reconcile against the current category list, in case it's changed since
@@ -1301,7 +1378,7 @@ function loadLocalDates(file){
 function saveChecklist(){
   safeLocalStorageSet(roomStorageKey('checklist', currentTripFile), JSON.stringify(currentTrip.checklist));
   if (fbDb){
-    fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(currentTripFile) + '/checklist').set(currentTrip.checklist);
+    trackedWrite(fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(currentTripFile) + '/checklist').set(currentTrip.checklist)).catch(() => {});
   }
 }
 function addChecklistItem(text){
@@ -1352,12 +1429,13 @@ function saveDates(){
   const dates = { start: currentTrip.startDate || null, end: currentTrip.endDate || null };
   safeLocalStorageSet(roomStorageKey('dates', currentTripFile), JSON.stringify(dates));
   if (fbDb){
-    fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(currentTripFile) + '/dates').set(dates);
+    trackedWrite(fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(currentTripFile) + '/dates').set(dates)).catch(() => {});
   }
 }
 function reportSyncWriteError(err){
   console.error('Firebase sync write failed', err);
-  if (el('roomStatus')) el('roomStatus').textContent = 'Sync error';
+  syncErrorActive = true;
+  updateRoomStatus();
 }
 function cacheCurrentPlaces(){
   const clean = JSON.parse(JSON.stringify(currentTrip.places));
@@ -1369,24 +1447,24 @@ function cacheCurrentPlaces(){
 // two collaborators changing different places cannot overwrite each other.
 function saveTrip(){
   const clean = cacheCurrentPlaces();
-  if (fbRef) fbRef.set(placesToRecord(clean)).catch(reportSyncWriteError);
+  if (fbRef) trackedWrite(fbRef.set(placesToRecord(clean))).catch(() => {});
 }
 function savePlace(place){
   cacheCurrentPlaces();
   if (!fbRef || !place) return;
   const clean = JSON.parse(JSON.stringify(place));
-  fbRef.child(clean.id).set(clean).catch(reportSyncWriteError);
+  trackedWrite(fbRef.child(clean.id).set(clean)).catch(() => {});
 }
 function savePlaces(places){
   cacheCurrentPlaces();
   if (!fbRef || !places.length) return;
   const updates = {};
   places.forEach(place => { updates[place.id] = JSON.parse(JSON.stringify(place)); });
-  fbRef.update(updates).catch(reportSyncWriteError);
+  trackedWrite(fbRef.update(updates)).catch(() => {});
 }
 function removePlace(placeId){
   cacheCurrentPlaces();
-  if (fbRef) fbRef.child(placeId).remove().catch(reportSyncWriteError);
+  if (fbRef) trackedWrite(fbRef.child(placeId).remove()).catch(() => {});
 }
 function resizeImageFile(file, maxDim, quality){
   return new Promise((resolve, reject) => {
@@ -1792,7 +1870,7 @@ let bulkRows = [];
 async function geocodeBulkRow(row, query){
   await new Promise(r => setTimeout(r, 1100)); // Nominatim's usage policy caps at 1 request/second
   try {
-    const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(query);
+    const url = nominatimSearchUrl({ format: 'json', limit: '1', q: query });
     const results = await (await fetch(url)).json();
     if (results && results[0]){
       row.lat = parseFloat(results[0].lat);
@@ -1871,7 +1949,7 @@ function updateBulkConfirmState(){
 }
 async function openBulkImport(lines){
   bulkRows = lines.map(raw => ({ raw, status: 'pending', name: '', lat: null, lng: null, selected: true }));
-  const tripCats = categoriesForTrip(currentTripFile);
+  const tripCats = tripCategories(currentTripFile);
   el('bulkCategory').innerHTML = tripCats.map(c => `<option value="${c.key}">${c.label}</option>`).join('');
   el('bulkCategory').value = activeCategory || tripCats[0].key;
   renderBulkList();
@@ -1895,6 +1973,10 @@ function confirmBulkImport(){
   renderHome();
   bulkRows = [];
   showScreen('screen-home');
+  showUndoToast(
+    `Added ${addedPlaces.length} place${addedPlaces.length === 1 ? '' : 's'}`,
+    { type: 'bulk-import', placeIds: addedPlaces.map(p => p.id) }
+  );
 }
 async function handleSharedLaunch(){
   const params = new URLSearchParams(location.search);
@@ -1951,7 +2033,7 @@ function renderSearchResults(ownMatches, externalResults){
     ownMatches.forEach(p => {
       const row = document.createElement('div');
       row.className = 'search-result-row search-result-own';
-      row.innerHTML = `<span class="search-result-dot" style="background:var(--${p.category})"></span><span>${escapeHtml(p.name)}</span>`;
+      row.innerHTML = `<span class="search-result-dot" style="background:${catColor(catByKey(p.category))}"></span><span>${escapeHtml(p.name)}</span>`;
       row.addEventListener('click', () => {
         clearSearchResults();
         el('search').value = '';
@@ -2001,17 +2083,27 @@ async function runSearch(query){
   lastOwnMatches = searchOwnPlaces(query);
   renderSearchResults(lastOwnMatches, []); // instant feedback from saved places while the geocoder is still loading
   const [west, north, east, south] = getTripViewbox();
-  const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=6'
-    + '&viewbox=' + [west, north, east, south].join(',') + '&bounded=1&q=' + encodeURIComponent(query);
+  const url = nominatimSearchUrl({ format: 'json', limit: '6', viewbox: [west, north, east, south].join(','), bounded: '1', q: query });
   let results = [];
   try { results = await (await fetch(url)).json(); } catch { results = []; }
   if (lastSearchQuery !== query) return; // superseded by a newer keystroke
   lastSearchResults = results;
   renderSearchResults(lastOwnMatches, results);
 }
-function pinIcon(cat){
+function pinIcon(cat, photo){
   const color = categoryColor(cat);
-  const catObj = CAT_BY_KEY[cat];
+  if (photo){
+    // A thumbnail makes a place recognisable while scanning the map without
+    // tapping every pin - the plain teardrop stays the fallback for places
+    // with no photo yet, so a bare pin still reads as "add a photo here".
+    return L.divIcon({
+      className: 'leaflet-div-icon',
+      html: `<div class="pin-photo" style="--pin-ring:${color}"><img src="${photo}" loading="lazy"><div class="pin-photo-tail"></div></div>`,
+      iconSize: [36, 44],
+      iconAnchor: [18, 44]
+    });
+  }
+  const catObj = catByKey(cat);
   const iconSvg = catObj ? catObj.icon : '';
   return L.divIcon({
     className: 'leaflet-div-icon',
@@ -2021,9 +2113,9 @@ function pinIcon(cat){
   });
 }
 function renderMapLegend(){
-  const rows = categoriesForTrip(currentTripFile).map(c => `
+  const rows = tripCategories(currentTripFile).map(c => `
     <div class="legend-row${mapCategoryFilter === c.key ? ' active' : ''}" data-cat="${c.key}">
-      <span class="legend-dot" style="background:var(--${c.key})"></span>
+      <span class="legend-dot" style="background:${catColor(c)}"></span>
       <span>${c.label}</span>
     </div>`).join('');
   const resetRow = mapCategoryFilter ? `<div class="legend-row legend-reset" id="legendResetRow">Show all</div>` : '';
@@ -2065,9 +2157,10 @@ function renderMarkers(){
   markerClusterGroup.clearLayers();
   markers = {};
   currentTrip.places.filter(p => !mapCategoryFilter || p.category === mapCategoryFilter).forEach(p => {
-    const m = L.marker([p.lat, p.lng], { icon: pinIcon(p.category) });
-    const thumb = p.photos && p.photos[0] ? `<img src="${p.photos[0]}" style="width:100%;max-width:180px;height:90px;object-fit:cover;border-radius:8px;margin-bottom:6px;display:block;">` : '';
-    const cat = CAT_BY_KEY[p.category];
+    const photo = p.photos && p.photos[0];
+    const m = L.marker([p.lat, p.lng], { icon: pinIcon(p.category, photo) });
+    const thumb = photo ? `<img src="${photo}" style="width:100%;max-width:180px;height:90px;object-fit:cover;border-radius:8px;margin-bottom:6px;display:block;">` : '';
+    const cat = catByKey(p.category);
     m.bindPopup(`
       <div class="map-popup">
         ${thumb}
@@ -2085,9 +2178,14 @@ function renderMarkers(){
 
 /* ---- home ---- */
 function renderHome(){
-  const tripCats = categoriesForTrip(currentTripFile);
-  const orderedCats = categoryOrder.map(k => CAT_BY_KEY[k]).filter(c => c && tripCats.includes(c));
-  tripCats.forEach(c => { if (!orderedCats.includes(c)) orderedCats.push(c); });
+  const tripCats = tripCategories(currentTripFile);
+  const tripKeys = new Set(tripCats.map(c => c.key));
+  // catByKey() re-parses custom categories from storage on every call, so a
+  // fresh object never === one already in tripCats - compare by key, not
+  // identity, or a custom category would silently duplicate in the grid.
+  const orderedCats = categoryOrder.map(k => catByKey(k)).filter(c => c && tripKeys.has(c.key));
+  const orderedKeys = new Set(orderedCats.map(c => c.key));
+  tripCats.forEach(c => { if (!orderedKeys.has(c.key)){ orderedCats.push(c); orderedKeys.add(c.key); } });
   const visibleCats = orderedCats.filter(c => currentTrip.visibleCategories.includes(c.key));
   const rows = visibleCats.length ? Math.ceil(visibleCats.length / 2) : 1;
   document.documentElement.style.setProperty('--hero-h', Math.max(9, 27 - rows * 3.2) + 'vh');
@@ -2126,7 +2224,7 @@ function renderHome(){
     pills.push(`<div class="info-pill clickable" id="recentActivityPill"><span class="activity-dot"></span><span>${escapeHtml(recent.addedBy || 'Someone')} added <b>${escapeHtml(recent.name)}</b> &middot; ${formatRelativeTime(recent.addedAt)}</span></div>`);
   }
   if (next){
-    const nextCat = CAT_BY_KEY[next.category];
+    const nextCat = catByKey(next.category);
     // Hidden by default (CSS) - only shown on the iPad landscape dashboard,
     // where the hero card (which normally carries this "next up" nudge) is
     // hidden in favor of the side panel's own overview map.
@@ -2182,7 +2280,7 @@ function renderHome(){
         <div class="card-count" style="color:rgba(255,255,255,.85);">${count} place${count===1?'':'s'}</div>`;
     } else {
       card.innerHTML = `
-        <div class="cat-icon" style="background:var(--${c.key}-soft);color:var(--${c.key})">${c.icon}</div>
+        <div class="cat-icon" style="background:${catSoftColor(c)};color:${catColor(c)}">${c.icon}</div>
         <div class="card-title">${c.label}</div>
         <div class="card-count">${count} place${count===1?'':'s'}</div>`;
     }
@@ -2196,21 +2294,41 @@ let catSettingsSortable = null;
 function renderCatSettings(){
   const list = el('catSettingsList');
   list.innerHTML = '';
-  const tripCats = categoriesForTrip(currentTripFile);
+  const tripCats = tripCategories(currentTripFile);
   const orderedKeys = categoryOrder.filter(k => tripCats.some(c => c.key === k));
   tripCats.forEach(c => { if (!orderedKeys.includes(c.key)) orderedKeys.push(c.key); });
   orderedKeys.forEach(key => {
-    const c = CAT_BY_KEY[key];
+    const c = catByKey(key);
     const visible = currentTrip.visibleCategories.includes(c.key);
+    const isCustom = key.startsWith('custom_');
     const row = document.createElement('div');
     row.className = 'settings-row';
     row.dataset.key = c.key;
     row.innerHTML = `
       <div class="drag-handle">${DRAG_HANDLE_ICON}</div>
-      <div class="cat-icon" style="background:var(--${c.key}-soft);color:var(--${c.key})">${c.icon}</div>
+      <div class="cat-icon" style="background:${catSoftColor(c)};color:${catColor(c)}">${c.icon}</div>
       <div class="settings-label">${c.label}</div>
+      ${isCustom ? `
+        <button type="button" class="icon-btn cat-rename-btn" aria-label="Rename category" title="Rename">&#9998;</button>
+        <button type="button" class="icon-btn cat-delete-btn" aria-label="Delete category" title="Delete">&#10005;</button>
+      ` : ''}
       <div class="toggle ${visible ? 'on' : ''}"><div class="toggle-knob"></div></div>`;
     row.querySelector('.toggle').addEventListener('click', () => toggleCategoryVisible(c.key));
+    if (isCustom){
+      row.querySelector('.cat-rename-btn').addEventListener('click', () => {
+        const next = prompt('Rename category', c.label);
+        if (next && next.trim() && next.trim() !== c.label){
+          renameCustomCategory(c.key, next.trim());
+          refreshCategoryUI();
+        }
+      });
+      row.querySelector('.cat-delete-btn').addEventListener('click', () => {
+        if (confirm(`Delete "${c.label}"? Places already tagged with it keep it, but it won't be selectable anymore.`)){
+          deleteCustomCategory(c.key);
+          refreshCategoryUI();
+        }
+      });
+    }
     list.appendChild(row);
   });
   if (catSettingsSortable) catSettingsSortable.destroy();
@@ -2231,6 +2349,53 @@ function toggleCategoryVisible(key){
   saveVisibleCategories(currentTripFile, currentTrip.visibleCategories);
   renderCatSettings();
   renderHome();
+}
+function updateCustomCategories(mutatorFn){
+  const arr = loadCustomCategories(currentTripFile);
+  mutatorFn(arr);
+  saveCustomCategoriesLocal(currentTripFile, arr);
+  if (fbDb){
+    trackedWrite(fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(currentTripFile) + '/customCategories').set(arr)).catch(() => {});
+  }
+  return arr;
+}
+function addCustomCategory(label){
+  const trimmed = (label || '').trim();
+  if (!trimmed) return null;
+  const existing = tripCategories(currentTripFile);
+  if (existing.some(c => c.label.toLowerCase() === trimmed.toLowerCase())){
+    alert(`"${trimmed}" already exists.`);
+    return null;
+  }
+  const palette = CUSTOM_CATEGORY_PALETTE[loadCustomCategories(currentTripFile).length % CUSTOM_CATEGORY_PALETTE.length];
+  const category = { key: 'custom_' + uid(), label: trimmed, icon: CUSTOM_CATEGORY_ICON, color: palette.color, soft: palette.soft };
+  updateCustomCategories(arr => arr.push(category));
+  categoryOrder.push(category.key);
+  saveCategoryOrder(currentTripFile, categoryOrder);
+  currentTrip.visibleCategories.push(category.key);
+  saveVisibleCategories(currentTripFile, currentTrip.visibleCategories);
+  return category;
+}
+function renameCustomCategory(key, label){
+  const trimmed = (label || '').trim();
+  if (!trimmed) return;
+  updateCustomCategories(arr => {
+    const c = arr.find(c => c.key === key);
+    if (c) c.label = trimmed;
+  });
+}
+function deleteCustomCategory(key){
+  updateCustomCategories(arr => {
+    const i = arr.findIndex(c => c.key === key);
+    if (i >= 0) arr.splice(i, 1);
+  });
+  categoryOrder = categoryOrder.filter(k => k !== key);
+  saveCategoryOrder(currentTripFile, categoryOrder);
+  const idx = currentTrip.visibleCategories.indexOf(key);
+  if (idx >= 0){
+    currentTrip.visibleCategories.splice(idx, 1);
+    saveVisibleCategories(currentTripFile, currentTrip.visibleCategories);
+  }
 }
 
 /* ---- category list ---- */
@@ -2257,7 +2422,7 @@ function getCategoryCoverPhoto(key){
 function saveCategoryCovers(){
   safeLocalStorageSet(roomStorageKey('covers', currentTripFile), JSON.stringify(currentTrip.categoryCovers || {}));
   if (fbDb){
-    fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(currentTripFile) + '/categoryCovers').set(currentTrip.categoryCovers || {});
+    trackedWrite(fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(currentTripFile) + '/categoryCovers').set(currentTrip.categoryCovers || {})).catch(() => {});
   }
 }
 function setCategoryCover(key, placeId, index){
@@ -2294,24 +2459,29 @@ function openCoverPhotoPicker(key){
   el('coverPhotoSheet').classList.add('open');
 }
 function renderCatBanner(key){
-  const cat = CAT_BY_KEY[key];
+  const cat = catByKey(key);
   const banner = el('catBanner');
   const cover = getCategoryCoverPhoto(key);
   if (cover){
     banner.style.backgroundImage = `linear-gradient(180deg, rgba(0,0,0,.05), rgba(0,0,0,.4)), url(${cover})`;
     el('catBannerIcon').innerHTML = '';
   } else {
-    banner.style.backgroundImage = `linear-gradient(135deg, var(--${key}), var(--${key}-soft))`;
+    banner.style.backgroundImage = `linear-gradient(135deg, ${catColor(cat)}, ${catSoftColor(cat)})`;
     el('catBannerIcon').innerHTML = cat.icon;
   }
   el('catCoverBtn').style.display = categoryPhotoPool(key).length ? 'flex' : 'none';
 }
 const CHECK_ICON = '<svg class="check-icon" viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3 3 7-7"/></svg>';
 function toggleVisitedInline(p, div, refreshFn){
+  const previousVisited = p.visited;
   p.visited = !p.visited;
   div.classList.toggle('visited', p.visited);
   savePlace(p);
   renderHome();
+  showUndoToast(
+    p.visited ? `Marked "${p.name}" as been` : `Marked "${p.name}" as not been`,
+    { type: 'visited', placeId: p.id, previousVisited }
+  );
   // Let the tap-to-check animation actually play before the list re-sorts
   // the row out from under it (unvisited-first sort would otherwise move
   // it away immediately).
@@ -2325,7 +2495,7 @@ function renderPlaceRow(p){
   if (userLatLng) metaParts.push(`${formatDistance(distanceKm(userLatLng[0], userLatLng[1], p.lat, p.lng))} away`);
   const photo = p.photos && p.photos[0];
   div.innerHTML = `
-    ${photo ? `<img class="place-thumb" src="${photo}">` : `<span class="place-dot" style="background:var(--${p.category})">${CHECK_ICON}</span>`}
+    ${photo ? `<img class="place-thumb" src="${photo}">` : `<span class="place-dot" style="background:${catColor(catByKey(p.category))}">${CHECK_ICON}</span>`}
     <div class="place-main">
       <span class="place-name">${escapeHtml(p.name)}</span>
       ${metaParts.length ? `<div class="place-notes">${metaParts.join(' &middot; ')}</div>` : ''}
@@ -2346,7 +2516,7 @@ let categoryFilter = '';
 function openCategory(key){
   if (activeCategory !== key) categoryFilter = '';
   activeCategory = key;
-  const cat = CAT_BY_KEY[key];
+  const cat = catByKey(key);
   el('catTitle').textContent = cat.label;
   renderCatBanner(key);
   const places = currentTrip.places.filter(p => p.category === key);
@@ -2437,7 +2607,7 @@ async function updateItineraryRouteDistances(container){
   }
 }
 function renderItineraryRow(p, nextPlace){
-  const cat = CAT_BY_KEY[p.category];
+  const cat = catByKey(p.category);
   const div = document.createElement('div');
   div.className = 'place' + (p.visited ? ' visited' : '');
   const photo = p.photos && p.photos[0];
@@ -2447,7 +2617,7 @@ function renderItineraryRow(p, nextPlace){
     metaParts.push(`<span class="itin-route-dist" data-place="${p.id}" data-next="${nextPlace.id}">${straightLine} to next stop</span>`);
   }
   div.innerHTML = `
-    ${photo ? `<img class="place-thumb" src="${photo}">` : `<span class="place-dot" style="background:var(--${p.category})">${CHECK_ICON}</span>`}
+    ${photo ? `<img class="place-thumb" src="${photo}">` : `<span class="place-dot" style="background:${catColor(cat)}">${CHECK_ICON}</span>`}
     <div class="place-main">
       <span class="place-name">${escapeHtml(p.name)}</span>
       <div class="place-notes">${metaParts.filter(Boolean).join(' &middot; ')}</div>
@@ -2545,7 +2715,17 @@ function renderItinerary(){
 
 /* ---- editor ---- */
 function populateCategorySelect(){
-  el('f-cat').innerHTML = categoriesForTrip(currentTripFile).map(c => `<option value="${c.key}">${c.label}</option>`).join('');
+  el('f-cat').innerHTML = tripCategories(currentTripFile).map(c => `<option value="${c.key}">${c.label}</option>`).join('');
+}
+// Every screen that lists categories (the editor dropdown, the map legend,
+// the homepage grid, the settings list) needs to refresh together whenever
+// a custom category is added, renamed or deleted - locally or by another
+// collaborator - or some of them would keep showing stale labels/options.
+function refreshCategoryUI(){
+  populateCategorySelect();
+  renderMapLegend();
+  renderHome();
+  if (el('screen-catsettings').classList.contains('active')) renderCatSettings();
 }
 function updateFlightHint(){
   const date = el('f-flight-date').value;
@@ -2573,7 +2753,7 @@ function saveFlights(){
   const clean = JSON.parse(JSON.stringify(currentTrip.flights));
   safeLocalStorageSet(roomStorageKey('flights', currentTripFile), JSON.stringify(clean));
   if (fbDb){
-    fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(currentTripFile) + '/flights').set(clean);
+    trackedWrite(fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(currentTripFile) + '/flights').set(clean)).catch(() => {});
   }
 }
 function renderFlightsScreen(){
@@ -2680,7 +2860,7 @@ function openEditor(id, latlng){
   let lat = null, lng = null;
   if (isNew){
     el('f-name').value = '';
-    el('f-cat').value = activeCategory || categoriesForTrip(currentTripFile)[0].key;
+    el('f-cat').value = activeCategory || tripCategories(currentTripFile)[0].key;
     el('f-visited').value = '0';
     el('f-day').value = '';
     el('f-notes').value = '';
@@ -2750,28 +2930,38 @@ function saveEditor(){
   if (el('screen-itinerary').classList.contains('active')) renderItinerary();
   closeEditor();
 }
-function showUndoToast(place){
-  lastDeleted = { place };
+function showUndoToast(message, action){
+  lastAction = action;
   clearTimeout(undoTimer);
-  el('toastText').textContent = `Deleted "${place.name}"`;
+  el('toastText').textContent = message;
   el('toast').classList.add('show');
   undoTimer = setTimeout(hideToast, 5000);
 }
 function hideToast(){
   el('toast').classList.remove('show');
-  lastDeleted = null;
+  lastAction = null;
 }
-function undoDelete(){
-  if (!lastDeleted) return;
+function undoLastAction(){
+  if (!lastAction) return;
   clearTimeout(undoTimer);
-  currentTrip.places.push(lastDeleted.place);
-  savePlace(lastDeleted.place);
+  const action = lastAction;
+  lastAction = null;
+  el('toast').classList.remove('show');
+  if (action.type === 'delete'){
+    currentTrip.places.push(action.place);
+    savePlace(action.place);
+  } else if (action.type === 'visited'){
+    const p = currentTrip.places.find(pl => pl.id === action.placeId);
+    if (p){ p.visited = action.previousVisited; savePlace(p); }
+  } else if (action.type === 'bulk-import'){
+    const ids = new Set(action.placeIds);
+    currentTrip.places = currentTrip.places.filter(p => !ids.has(p.id));
+    action.placeIds.forEach(removePlace);
+  }
   renderMarkers();
   renderHome();
   if (activeCategory) openCategory(activeCategory);
   if (el('screen-itinerary').classList.contains('active')) renderItinerary();
-  el('toast').classList.remove('show');
-  lastDeleted = null;
 }
 function deletePlace(){
   const place = currentTrip.places.find(p => p.id === editingId);
@@ -2783,7 +2973,7 @@ function deletePlace(){
   if (activeCategory) openCategory(activeCategory);
   if (el('screen-itinerary').classList.contains('active')) renderItinerary();
   closeEditor();
-  showUndoToast(place);
+  showUndoToast(`Deleted "${place.name}"`, { type: 'delete', place });
 }
 
 /* ---- trips ---- */
@@ -2793,6 +2983,7 @@ function setTrip(file, definition){
   if (fbFlightsRef) { fbFlightsRef.off(); fbFlightsRef = null; }
   if (fbChecklistRef) { fbChecklistRef.off(); fbChecklistRef = null; }
   if (fbCategoryCoversRef) { fbCategoryCoversRef.off(); fbCategoryCoversRef = null; }
+  if (fbCustomCategoriesRef) { fbCustomCategoriesRef.off(); fbCustomCategoriesRef = null; }
   clearSearchResults();
   el('search').value = '';
   mapCategoryFilter = null;
@@ -2916,6 +3107,17 @@ function setTrip(file, definition){
   }
 
   if (fbDb){
+    fbCustomCategoriesRef = fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(file) + '/customCategories');
+    fbCustomCategoriesRef.on('value', snap => {
+      const remote = snap.val();
+      const arr = Array.isArray(remote) ? remote : (remote && typeof remote === 'object') ? Object.values(remote) : [];
+      saveCustomCategoriesLocal(file, arr);
+      if (file !== currentTripFile) return;
+      refreshCategoryUI();
+    });
+  }
+
+  if (fbDb){
     fbRef = fbDb.ref('rooms/' + getRoom() + '/trips/' + tripKey(file) + '/places');
     fbRef.on('value', async snap => {
       if (file !== currentTripFile) return;
@@ -2936,7 +3138,7 @@ function setTrip(file, definition){
       // readable; an old client can still replace it with an array if rolled back.
       if ((legacyPlaceKeys || migrated || !remote) && currentTrip.places.length){
         try {
-          fbRef.set(placesToRecord(currentTrip.places)).catch(reportSyncWriteError);
+          trackedWrite(fbRef.set(placesToRecord(currentTrip.places))).catch(() => {});
         } catch (err) { reportSyncWriteError(err); }
       }
       renderMarkers();
@@ -3060,7 +3262,7 @@ async function boot(){
     el('menu').classList.remove('open');
   });
 
-  el('toastUndoBtn').addEventListener('click', undoDelete);
+  el('toastUndoBtn').addEventListener('click', undoLastAction);
 
   el('catSettingsItem').addEventListener('click', () => {
     el('menu').classList.remove('open');
@@ -3068,6 +3270,10 @@ async function boot(){
     showScreen('screen-catsettings');
   });
   el('catSettingsBackBtn').addEventListener('click', () => showScreen('screen-home'));
+  el('addCategoryBtn').addEventListener('click', () => {
+    const name = prompt('New category name, e.g. "Museums" or "Kids activities"');
+    if (addCustomCategory(name)) refreshCategoryUI();
+  });
 
   el('notesItem').addEventListener('click', () => {
     el('menu').classList.remove('open');
@@ -3179,7 +3385,7 @@ async function boot(){
 
     let center = [20, 0], zoom = 4, bounds = null;
     try {
-      const res = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(trimmed));
+      const res = await fetch(nominatimSearchUrl({ format: 'json', limit: '1', q: trimmed }));
       const results = await res.json();
       if (results.length){
         const r = results[0];
