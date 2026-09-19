@@ -4,8 +4,8 @@ TripMap is a mobile-first trip planner for collecting places, building itinerari
 
 ## Current capabilities
 
-- Leaflet maps with marker clustering, street and satellite layers, routing, and location search - a place's own photo renders directly on its map pin
-- Places organised into configurable, per-trip categories (built-in categories can be scoped to specific trips; anyone can add their own custom categories per trip too), with notes, photos, visited state, and cover images
+- Leaflet maps with marker clustering, street and satellite layers, routing, and location search - a place's own photo renders directly on its map pin, and tapping it opens that place's photos full-screen without opening the editor first
+- Places organised into configurable, per-trip categories (built-in categories can be scoped to specific trips; anyone can add their own custom categories per trip too), with notes, drag-to-reorder photos, visited state, and cover images
 - Day-by-day itinerary, flights, trip dates, weather, checklist notes, recap, and nearest-place tools
 - Google Maps and Apple Maps link parsing, share-target handling, and bulk paste
 - Anonymous Firebase identity and Realtime Database rooms for live synchronisation
