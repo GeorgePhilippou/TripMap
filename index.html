@@ -879,7 +879,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script src="src/tripmap-core.js"></script>
 <script>
-const APP_VERSION = '1.40.1';
+const APP_VERSION = '1.40.2';
 
 const {
   boundsSpanReasonable,
@@ -2138,7 +2138,11 @@ function pinIcon(cat, photo, name){
       // data URI, and lazy-load's visibility detection is unreliable on
       // elements inside a heavily-transformed ancestor - every Leaflet
       // marker is GPU-positioned via translate3d, which is exactly that.
-      html: `<div class="pin-wrap"><div class="pin-photo" style="--pin-ring:${color}"><img src="${photo}"><div class="pin-photo-tail"></div></div>${label}</div>`,
+      // decoding="sync" forces the browser to fully decode before it ever
+      // paints this element, rather than risk painting whatever's decoded
+      // so far for a large source photo - the default "auto" is allowed to
+      // do exactly that.
+      html: `<div class="pin-wrap"><div class="pin-photo" style="--pin-ring:${color}"><img src="${photo}" decoding="sync"><div class="pin-photo-tail"></div></div>${label}</div>`,
       iconSize: [112, 70],
       iconAnchor: [56, 44]
     });
