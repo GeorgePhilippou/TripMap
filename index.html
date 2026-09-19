@@ -35,6 +35,7 @@
     --airport:#4A5E8A;    --airport-soft:#DBE2F0;
     --hike:#65588F;       --hike-soft:#E1DCF0;
     --zorbas:#A7602E;     --zorbas-soft:#F2DFCF;
+    --coffeeshop:#5B7A3A; --coffeeshop-soft:#DFE7D2;
     --cafe:#765A43;       --cafe-soft:#E9DED3;
     --restaurants:#984F42;--restaurants-soft:#F0D9D5;
     --nature:#3F7557;     --nature-soft:#D8E8DD;
@@ -81,7 +82,8 @@
   }
 
   /* ---- top bar (shared) ---- */
-  .topbar{ display:flex; align-items:center; justify-content:flex-end; padding:calc(10px + env(safe-area-inset-top)) 18px 0; flex-shrink:0; }
+  .topbar{ display:flex; align-items:center; justify-content:flex-end; gap:10px; padding:calc(10px + env(safe-area-inset-top)) 18px 0; flex-shrink:0; }
+  .version-tag{ font-size:11px; color:var(--muted); opacity:.6; }
   .icon-btn{
     background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:10px;
     width:34px; height:34px; font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center;
@@ -538,6 +540,7 @@
   <!-- HOME -->
   <section id="screen-home" class="screen active">
     <div class="topbar">
+      <span class="version-tag" id="versionTag"></span>
       <button class="icon-btn" id="menuBtn">&#8942;</button>
     </div>
     <div class="home-header">
@@ -844,7 +847,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script src="src/tripmap-core.js"></script>
 <script>
-const APP_VERSION = '1.35.0';
+const APP_VERSION = '1.36.0';
 
 const {
   boundsSpanReasonable,
@@ -883,11 +886,11 @@ const ROOM_KEY = 'tripmap:room';
 const LOCAL_TRIPS_KEY = 'tripmap:localtrips';
 const LOCAL_OFFLINE_MODE = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(location.hostname)
   && new URLSearchParams(location.search).get('offline') === '1';
-let fbApp, fbAuth, fbDb, fbRef, fbDatesRef, fbFlightsRef, fbChecklistRef, fbCategoryCoversRef;
+let fbAuth, fbDb, fbRef, fbDatesRef, fbFlightsRef, fbChecklistRef, fbCategoryCoversRef;
 let firebaseIdentityReady = false;
 try {
   if (!LOCAL_OFFLINE_MODE){
-    fbApp = firebase.initializeApp(FIREBASE_CONFIG);
+    firebase.initializeApp(FIREBASE_CONFIG);
     fbAuth = firebase.auth();
     fbDb = firebase.database();
   }
@@ -988,7 +991,8 @@ const CATEGORIES = [
   { key:'airport',     label:'Airport & Travel',     icon:svgIcon('<path d="M10 2.5v5.3L3 11.5V14l7-2.2v4l-2.2 1.5v1l2.2-.7 2.2.7v-1L10 15.8v-4l7 2.2v-2.5l-7-3.7"/>') },
   { key:'general',     label:'General',              icon:svgIcon('<path d="M5 2.5h10v15l-5-3-5 3v-15Z"/><path d="M8 7h4M8 10h4"/>') },
   { key:'hike',        label:'Hikes',                icon:svgIcon('<path d="m2.5 17 5.7-10 3 4.5 2-3 4.3 8.5h-15Z"/><path d="M8.5 17c.2-2.3 1.4-3.4 3.3-4.6"/>') },
-  { key:'zorbas',      label:'Zorbas Bakery',        icon:svgIcon('<path d="M3 13.5c0-4.4 3.1-7.5 7-7.5s7 3.1 7 7.5v3H3v-3Z"/><path d="m6.7 8.2 2 2.5M10.3 6.2l2.2 2.8M13.5 8l1.8 2.2"/>') },
+  { key:'zorbas',      label:'Zorbas Bakery',        icon:svgIcon('<path d="M3 13.5c0-4.4 3.1-7.5 7-7.5s7 3.1 7 7.5v3H3v-3Z"/><path d="m6.7 8.2 2 2.5M10.3 6.2l2.2 2.8M13.5 8l1.8 2.2"/>'), trips:['cyprus'] },
+  { key:'coffeeshop',  label:'Coffeeshops',          icon:svgIcon('<path d="M10 2.5c-.9 2.2-3 2.4-4.3 1.2.6 1.6.4 3-.9 4.3 1.5 0 2.8-.7 3.6-2 0 2.3-.8 3.9-2.2 5.3 2.1-.6 3.3-1.9 4-3.6.7 1.7 1.9 3 4 3.6-1.4-1.4-2.2-3-2.2-5.3.8 1.3 2.1 2 3.6 2-1.3-1.3-1.5-2.7-.9-4.3-1.3 1.2-3.4 1-4.3-1.2Z"/><path d="M10 12v5.5"/>'), trips:['amsterdam'] },
   { key:'cafe',        label:'Cafés & Bakeries',     icon:svgIcon('<path d="M4 7.5h10v5a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4v-5ZM14 9h1.5a2 2 0 0 1 0 4H14M3 17.5h13"/><path d="M7 5c-1-1-.2-1.8.3-2.5M11 5c-1-1-.2-1.8.3-2.5"/>') },
   { key:'restaurants', label:'Restaurants',          icon:svgIcon('<path d="M3 14.5h14M5 14.5a5 5 0 0 1 10 0M10 5v-2M8.5 5h3"/><path d="M2.5 17.5h15"/>') },
   { key:'nature',      label:'Nature & Viewpoints',  icon:svgIcon('<circle cx="14.5" cy="5" r="2"/><path d="m2.5 16.5 5.2-9 3 4.2 2-2.8 4.8 7.6h-15Z"/><path d="M8 16.5c.3-2 1.4-3.2 3.2-4.3"/>') },
@@ -997,12 +1001,21 @@ const CATEGORIES = [
   { key:'transport',   label:'Parking & Transport',  icon:svgIcon('<rect x="3" y="3" width="14" height="13" rx="3"/><path d="M6 13V8h8v5M6 10h8M6.5 16v1.5M13.5 16v1.5"/><circle cx="7" cy="13" r=".7" fill="currentColor" stroke="none"/><circle cx="13" cy="13" r=".7" fill="currentColor" stroke="none"/>') },
 ];
 const CAT_BY_KEY = Object.fromEntries(CATEGORIES.map(c => [c.key, c]));
-const DEFAULT_VISIBLE_CATEGORIES = CATEGORIES.filter(c => c.key !== 'hike').map(c => c.key);
+function categoriesForTrip(file){
+  // Most categories apply to every trip. A few (Zorbas Bakery, Amsterdam
+  // coffeeshops) only make sense for one destination, so they opt in via
+  // `trips` instead of being offered - and enabled by default - everywhere.
+  const key = tripKey(file);
+  return CATEGORIES.filter(c => !c.trips || c.trips.includes(key));
+}
+function defaultVisibleCategories(file){
+  return categoriesForTrip(file).filter(c => c.key !== 'hike').map(c => c.key);
+}
 
 let map, markers = {}, currentTrip = null, currentTripFile = null, editingId = null, pendingLatLng = null;
 let heroMap, heroMarkersLayer, sideMap, sideMarkersLayer;
 let searchMarkers = [], lastSearchResults = [], lastOwnMatches = [], lastSearchQuery = '', searchDebounceTimer = null;
-let activeCategory = null, pendingPhotos = [], placing = false;
+let activeCategory = null, pendingPhotos = [];
 let sortByDistance = false, lastDeleted = null, undoTimer = null, repositioningId = null, mapCategoryFilter = null;
 let categoryOrder = CATEGORIES.map(c => c.key);
 
@@ -1076,7 +1089,7 @@ function ensureLocality(p){
         p.localityV = LOCALITY_FORMAT_VERSION;
         savePlace(p);
         if (activeCategory === p.category && el('screen-category').classList.contains('active')) openCategory(activeCategory);
-      } catch (err) {
+      } catch {
         // leave p.locality undefined so a transient failure gets retried next time this category is opened,
         // instead of being cached as "no data" forever
       } finally {
@@ -1138,7 +1151,7 @@ async function fetchWeather(){
       max: Math.round(data.daily.temperature_2m_max[i]),
       min: Math.round(data.daily.temperature_2m_min[i])
     }));
-  } catch (err) { weatherData = null; weatherForecast = null; }
+  } catch { weatherData = null; weatherForecast = null; }
   weatherLoading = false;
   if (tripFile === currentTripFile) renderHome();
 }
@@ -1158,7 +1171,7 @@ function renderRecapScreen(){
   const total = currentTrip.places.length;
   const visited = currentTrip.places.filter(p => p.visited).length;
   const pct = total ? Math.round(visited / total * 100) : 0;
-  const catCounts = CATEGORIES.map(c => {
+  const catCounts = categoriesForTrip(currentTripFile).map(c => {
     const places = currentTrip.places.filter(p => p.category === c.key);
     return { c, total: places.length, visited: places.filter(p => p.visited).length };
   }).filter(x => x.total > 0);
@@ -1228,7 +1241,7 @@ async function loadLocalPlaces(file){
   try {
     const fromIdb = await idbKeyval.get(scopedKey);
     if (fromIdb) return fromIdb;
-  } catch (err) { /* fall through to the legacy cache below */ }
+  } catch { /* fall through to the legacy cache below */ }
   if (getRoom() === DEFAULT_ROOM){
     try {
       const legacyIdbKey = 'tripmap:content:' + file;
@@ -1238,7 +1251,7 @@ async function loadLocalPlaces(file){
         await idbKeyval.del(legacyIdbKey);
         return legacyIdb;
       }
-    } catch (err) { /* fall through to the older localStorage cache */ }
+    } catch { /* fall through to the older localStorage cache */ }
   }
   // One-time migration for anyone who had this cached before the move to
   // IndexedDB - read the old key once, copy it over, then stop touching it.
@@ -1250,7 +1263,7 @@ async function loadLocalPlaces(file){
       await idbKeyval.set(scopedKey, parsed);
       localStorage.removeItem(legacyKey);
       return parsed;
-    } catch (err) { /* ignore a corrupt legacy cache and start fresh */ }
+    } catch { /* ignore a corrupt legacy cache and start fresh */ }
   }
   return [];
 }
@@ -1263,13 +1276,13 @@ async function saveLocalPlaces(file, places){
 }
 function loadVisibleCategories(file){
   const saved = readRoomStorage('visible', file);
-  return saved ? JSON.parse(saved) : DEFAULT_VISIBLE_CATEGORIES.slice();
+  return saved ? JSON.parse(saved) : defaultVisibleCategories(file);
 }
 function saveVisibleCategories(file, arr){
   safeLocalStorageSet(roomStorageKey('visible', file), JSON.stringify(arr));
 }
 function loadCategoryOrder(file){
-  const allKeys = CATEGORIES.map(c => c.key);
+  const allKeys = categoriesForTrip(file).map(c => c.key);
   const saved = readRoomStorage('order', file);
   const order = saved ? JSON.parse(saved) : allKeys.slice();
   // Reconcile against the current category list, in case it's changed since
@@ -1607,7 +1620,6 @@ function updateSideMap(){
   setTimeout(() => { sideMap.invalidateSize(); applyView(); }, 120);
 }
 function startPlacing(){
-  placing = true;
   el('pinCrosshair').classList.add('show');
   el('placeConfirmBar').classList.add('show');
   el('mapAddBtn').style.display = 'none';
@@ -1618,7 +1630,6 @@ function startPlacing(){
   if (zoomCtrl) zoomCtrl.style.display = 'none';
 }
 function stopPlacing(){
-  placing = false;
   el('pinCrosshair').classList.remove('show');
   el('placeConfirmBar').classList.remove('show');
   el('mapAddBtn').style.display = 'flex';
@@ -1680,7 +1691,7 @@ async function fetchJson(url, timeoutMs){
     const res = await fetch(url, { signal: controller.signal });
     if (!res.ok) return null;
     return await res.json();
-  } catch (err) {
+  } catch {
     return null;
   } finally {
     clearTimeout(timeout);
@@ -1693,7 +1704,7 @@ async function fetchText(url, timeoutMs){
     const res = await fetch(url, { signal: controller.signal });
     if (!res.ok) return null;
     return await res.text();
-  } catch (err) {
+  } catch {
     return null;
   } finally {
     clearTimeout(timeout);
@@ -1791,7 +1802,7 @@ async function geocodeBulkRow(row, query){
     } else {
       row.status = 'failed';
     }
-  } catch (err) {
+  } catch {
     row.status = 'failed';
   }
 }
@@ -1860,8 +1871,9 @@ function updateBulkConfirmState(){
 }
 async function openBulkImport(lines){
   bulkRows = lines.map(raw => ({ raw, status: 'pending', name: '', lat: null, lng: null, selected: true }));
-  el('bulkCategory').innerHTML = CATEGORIES.map(c => `<option value="${c.key}">${c.label}</option>`).join('');
-  el('bulkCategory').value = activeCategory || CATEGORIES[0].key;
+  const tripCats = categoriesForTrip(currentTripFile);
+  el('bulkCategory').innerHTML = tripCats.map(c => `<option value="${c.key}">${c.label}</option>`).join('');
+  el('bulkCategory').value = activeCategory || tripCats[0].key;
   renderBulkList();
   showScreen('screen-bulk');
   for (const row of bulkRows){
@@ -1992,7 +2004,7 @@ async function runSearch(query){
   const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=6'
     + '&viewbox=' + [west, north, east, south].join(',') + '&bounded=1&q=' + encodeURIComponent(query);
   let results = [];
-  try { results = await (await fetch(url)).json(); } catch (err) { results = []; }
+  try { results = await (await fetch(url)).json(); } catch { results = []; }
   if (lastSearchQuery !== query) return; // superseded by a newer keystroke
   lastSearchResults = results;
   renderSearchResults(lastOwnMatches, results);
@@ -2009,7 +2021,7 @@ function pinIcon(cat){
   });
 }
 function renderMapLegend(){
-  const rows = CATEGORIES.map(c => `
+  const rows = categoriesForTrip(currentTripFile).map(c => `
     <div class="legend-row${mapCategoryFilter === c.key ? ' active' : ''}" data-cat="${c.key}">
       <span class="legend-dot" style="background:var(--${c.key})"></span>
       <span>${c.label}</span>
@@ -2073,8 +2085,9 @@ function renderMarkers(){
 
 /* ---- home ---- */
 function renderHome(){
-  const orderedCats = categoryOrder.map(k => CAT_BY_KEY[k]).filter(Boolean);
-  CATEGORIES.forEach(c => { if (!orderedCats.includes(c)) orderedCats.push(c); });
+  const tripCats = categoriesForTrip(currentTripFile);
+  const orderedCats = categoryOrder.map(k => CAT_BY_KEY[k]).filter(c => c && tripCats.includes(c));
+  tripCats.forEach(c => { if (!orderedCats.includes(c)) orderedCats.push(c); });
   const visibleCats = orderedCats.filter(c => currentTrip.visibleCategories.includes(c.key));
   const rows = visibleCats.length ? Math.ceil(visibleCats.length / 2) : 1;
   document.documentElement.style.setProperty('--hero-h', Math.max(9, 27 - rows * 3.2) + 'vh');
@@ -2183,8 +2196,9 @@ let catSettingsSortable = null;
 function renderCatSettings(){
   const list = el('catSettingsList');
   list.innerHTML = '';
-  const orderedKeys = categoryOrder.filter(k => CAT_BY_KEY[k]);
-  CATEGORIES.forEach(c => { if (!orderedKeys.includes(c.key)) orderedKeys.push(c.key); });
+  const tripCats = categoriesForTrip(currentTripFile);
+  const orderedKeys = categoryOrder.filter(k => tripCats.some(c => c.key === k));
+  tripCats.forEach(c => { if (!orderedKeys.includes(c.key)) orderedKeys.push(c.key); });
   orderedKeys.forEach(key => {
     const c = CAT_BY_KEY[key];
     const visible = currentTrip.visibleCategories.includes(c.key);
@@ -2531,7 +2545,7 @@ function renderItinerary(){
 
 /* ---- editor ---- */
 function populateCategorySelect(){
-  el('f-cat').innerHTML = CATEGORIES.map(c => `<option value="${c.key}">${c.label}</option>`).join('');
+  el('f-cat').innerHTML = categoriesForTrip(currentTripFile).map(c => `<option value="${c.key}">${c.label}</option>`).join('');
 }
 function updateFlightHint(){
   const date = el('f-flight-date').value;
@@ -2543,12 +2557,6 @@ function updateFlightHint(){
   const fmt = d => d.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
   hint.textContent = `Recommended: arrive at the airport by ${fmt(arriveBy)} — 3h before departure`;
   hint.style.display = 'block';
-}
-function flightSummary(f){
-  if (!f.number) return '';
-  const parts = [f.number];
-  if (f.depart) parts.push(f.depart + (f.arrive ? ` → ${f.arrive}` : ''));
-  return parts.join(' · ');
 }
 function flightDateTime(f){
   return f.date && f.depart ? new Date(`${f.date}T${f.depart}`) : null;
@@ -2672,7 +2680,7 @@ function openEditor(id, latlng){
   let lat = null, lng = null;
   if (isNew){
     el('f-name').value = '';
-    el('f-cat').value = activeCategory || CATEGORIES[0].key;
+    el('f-cat').value = activeCategory || categoriesForTrip(currentTripFile)[0].key;
     el('f-visited').value = '0';
     el('f-day').value = '';
     el('f-notes').value = '';
@@ -2805,6 +2813,7 @@ function setTrip(file, definition){
     visibleCategories: loadVisibleCategories(file)
   };
   categoryOrder = loadCategoryOrder(file);
+  populateCategorySelect();
   resetMapView();
 
   // Firebase's listeners below only fire once a network response comes back,
@@ -2958,7 +2967,7 @@ function populateTripSelect(files, activeFile){
 
 async function boot(){
   el('menuFooter').innerHTML = `Trip Map v${APP_VERSION}<br>Designed by George Philippou &middot; Made with AI`;
-  populateCategorySelect();
+  el('versionTag').textContent = `v${APP_VERSION}`;
   renderMapLegend();
   initMap();
   initHeroMap();
@@ -3185,7 +3194,7 @@ async function boot(){
           if (boundsSpanReasonable(candidateBounds, r.place_rank)) bounds = candidateBounds;
         }
       }
-    } catch (err) { /* fall back to default center/zoom */ }
+    } catch { /* fall back to default center/zoom */ }
 
     const definition = { name: trimmed, dates: '', center, zoom, bounds };
     safeLocalStorageSet('tripmap:shell:' + file, JSON.stringify(definition));

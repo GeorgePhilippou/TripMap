@@ -32,7 +32,7 @@ assert.ok(categorySource, 'index.html must define CATEGORIES');
 const categoryKeys = [...categorySource[1].matchAll(/key:'([a-z]+)'/g)].map(match => match[1]);
 const expectedCategoryKeys = [
   'sight', 'food', 'beach', 'historical', 'fruit', 'shops', 'activity', 'stays', 'airport', 'general', 'hike',
-  'zorbas', 'cafe', 'restaurants', 'nature', 'nightlife', 'essentials', 'transport',
+  'zorbas', 'coffeeshop', 'cafe', 'restaurants', 'nature', 'nightlife', 'essentials', 'transport',
 ];
 assert.deepEqual(categoryKeys, expectedCategoryKeys, 'category keys or their intended order changed unexpectedly');
 assert.equal(new Set(categoryKeys).size, categoryKeys.length, 'category keys must be unique');
